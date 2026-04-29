@@ -61,6 +61,8 @@ test("clicking Next 30d preset updates URL with dateFrom and dateTo", async ({ p
   await page.waitForLoadState("networkidle");
 
   await page.getByTestId("preset-next-30d").click();
+  // router.replace runs asynchronously — wait for the URL to actually flip before asserting.
+  await page.waitForURL(/dateFrom=/, { timeout: 5_000 });
 
   const url = page.url();
   expect(url).toContain("dateFrom=");
@@ -104,6 +106,7 @@ test("KPI cards display computed values from mocked data", async ({ page }) => {
 
   // KPI cards should show total hours, total revenue, utilization, at-risk
   const totalHours = MOCK_ROWS.reduce((s, r) => s + r.hours, 0);
-  await expect(page.getByText(String(totalHours))).toBeAttached({ timeout: 10_000 });
-  await expect(page.getByText("82%")).toBeAttached();
+  // exact:true so the string isn't matched as a substring of an unrelated table row.
+  await expect(page.getByText(String(totalHours), { exact: true }).first()).toBeAttached({ timeout: 10_000 });
+  await expect(page.getByText("82%", { exact: true }).first()).toBeAttached();
 });

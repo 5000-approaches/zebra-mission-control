@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, ChangeEvent, FormEvent } from "react";
 import Markdown from "@/components/Markdown";
+import IntegrationToolsList from "@/components/IntegrationToolsList";
 
 type Attachment = { data: string; mediaType: string; name: string };
 type ToolError = { tool: string; input: unknown; error: string };
@@ -136,11 +137,12 @@ export default function ForecastPage() {
     >
       <div className="px-6 py-5 border-b flex-shrink-0" style={{ borderColor: "var(--page-border)" }}>
         <h1 className="text-xl font-bold" style={{ color: "var(--page-text)" }}>
-          Forecast Chat
+          Forecast Agent
         </h1>
         <p className="text-sm mt-0.5" style={{ color: "var(--page-text)", opacity: 0.55 }}>
           Ask billing and revenue questions backed by PowerOffice data
         </p>
+        <IntegrationToolsList />
       </div>
 
       <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">

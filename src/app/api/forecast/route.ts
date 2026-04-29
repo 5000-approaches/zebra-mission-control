@@ -13,6 +13,8 @@ export type ForecastMonth = {
 
 export type ForecastApiResponse = {
   months: ForecastMonth[];
+  /** Oslo-local current month as YYYY-MM. Lets the UI classify past/current/future without re-deriving timezone. */
+  currentMonth: string;
   totals: {
     observed: number;
     projected: number;
@@ -126,16 +128,20 @@ export async function GET(req: Request) {
   const todayIso = isoDate(today);
   const months = getOsloMonths(today);
 
-  // Build the call plan. The MCP `forecast` tool requires forecast_until_date >= to_date,
-  // so we use different argument shapes for past, current, and future months.
-  // Past M:    from=M-1, to=M-end, forecast_until=today      → AnalysisPeriodTotal = actual M revenue
-  // Current M: from=M-1, to=today, forecast_until=M-end      → AnalysisPeriodTotal = MTD, ProjectedTotal = full-month estimate
-  // Future M:  cumulative from current month start through M-end; projected M = cumThruM - cumThruPrevM
+  // The PowerOffice MCP `forecast` tool errors when to_date == today, because
+  // the current day's time entries aren't booked yet — pass yesterday instead
+  // so the analysis period always lands on a fully-booked day.
+  const yesterdayDate = new Date(Date.UTC(today.year, today.month - 1, today.day - 1));
+  const yesterdayIso = yesterdayDate.toISOString().slice(0, 10);
+
+  const currentMonthStart = `${today.year}-${String(today.month).padStart(2, "0")}-01`;
+
+  // Past M:    from=M-start, to=M-end,            forecast_until=today        → AnalysisPeriodTotal = actual M revenue
+  // Current M: from=M-start, to=yesterday or M-1, forecast_until=M-end        → AnalysisPeriodTotal = MTD, ProjectedTotal = full-month estimate
+  // Future M:  cumulative from current-month-start through M-end; projected M = cumThruM - cumThruPrevM
   //
   // For 6 months we issue: 3 past + 1 current + 2 future-cumulative = 6 calls in parallel.
   // The current-month call doubles as the "cumulative through current month" baseline.
-
-  const currentMonthStart = `${today.year}-${String(today.month).padStart(2, "0")}-01`;
 
   type CallPlan =
     | { kind: "past"; month: string; args: Record<string, string> }
@@ -152,18 +158,21 @@ export async function GET(req: Request) {
     const isFuture = y > today.year || (y === today.year && mon > today.month);
 
     if (isCurrent) {
+      // On the 1st of the month, yesterday is in the prior month — clamp to mStart
+      // so from <= to. The MCP may still error on day 1 (no MTD data); a zero slot is fine.
+      const toDate = yesterdayIso < mStart ? mStart : yesterdayIso;
       return {
         kind: "current",
         month: m,
-        args: { from_date: mStart, to_date: todayIso, forecast_until_date: mEnd },
+        args: { from_date: mStart, to_date: toDate, forecast_until_date: mEnd },
       };
     }
     if (isFuture) {
-      // Cumulative from current-month-start through this month's end
+      const toDate = yesterdayIso < currentMonthStart ? currentMonthStart : yesterdayIso;
       return {
         kind: "future",
         month: m,
-        args: { from_date: currentMonthStart, to_date: todayIso, forecast_until_date: mEnd },
+        args: { from_date: currentMonthStart, to_date: toDate, forecast_until_date: mEnd },
       };
     }
     return {
@@ -254,7 +263,8 @@ export async function GET(req: Request) {
     adjustments: forecastMonths.reduce((s, m) => s + m.adjustments, 0),
   };
 
-  const response: ForecastApiResponse = { months: forecastMonths, totals };
+  const currentMonth = `${today.year}-${String(today.month).padStart(2, "0")}`;
+  const response: ForecastApiResponse = { months: forecastMonths, currentMonth, totals };
   return new Response(JSON.stringify(response), {
     headers: { "Content-Type": "application/json" },
   });

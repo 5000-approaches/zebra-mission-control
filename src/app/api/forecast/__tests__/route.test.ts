@@ -71,6 +71,8 @@ describe("GET /api/forecast", () => {
     const json = await res.json();
 
     expect(json.months).toHaveLength(6);
+    expect(json.currentMonth).toMatch(/^\d{4}-\d{2}$/);
+    expect(json.currentMonth).toBe(json.months[3].month);
     // Past months: observed = AnalysisPeriodTotal; projected = observed.
     expect(json.months[0].observed).toBeCloseTo(1180950.39);
     expect(json.months[0].projected).toBeCloseTo(1180950.39);
@@ -87,28 +89,31 @@ describe("GET /api/forecast", () => {
     expect(json.months[5].projected).toBeCloseTo(2400000 - 1605857.98);
   });
 
-  it("issues correct args per kind: past uses month range + forecast_until=today; current uses today + month-end; future uses cumulative", async () => {
+  it("issues correct args per kind: past uses month range + forecast_until=today; current/future use yesterday as to_date to avoid MCP error on today's not-yet-booked entries", async () => {
     vi.mocked(callTool).mockResolvedValue(mockResult(REAL_PAYLOAD_APRIL));
     await GET(makeGet());
 
     const calls = vi.mocked(callTool).mock.calls;
     expect(calls).toHaveLength(6);
 
-    // Past months: from_date = month-1, to_date = month-end, forecast_until_date = today (Oslo)
+    // Past months: from_date = month-start, to_date = month-end, forecast_until_date = today (Oslo)
     const [, jan] = calls[0];
     expect(jan).toMatchObject({ from_date: expect.stringMatching(/^\d{4}-01-01$/), to_date: expect.stringMatching(/^\d{4}-01-31$/) });
-    expect(jan.forecast_until_date).toBe(jan.forecast_until_date); // today
 
-    // Current month: from_date = month-start, to_date = today, forecast_until_date = month-end
+    // Current month: from_date = month-start, forecast_until_date = month-end.
+    // to_date is yesterday (clamped to from_date on day 1) — never today.
     const [, current] = calls[3];
     expect(current.from_date).toMatch(/-01$/);
     expect(current.forecast_until_date).toMatch(/-(28|29|30|31)$/);
+    expect(current.to_date).not.toBe(current.forecast_until_date);
 
-    // Future months: from_date = current-month-start (cumulative)
+    // Future months: from_date = current-month-start (cumulative); to_date = yesterday (matches current)
     const [, may] = calls[4];
     const [, jun] = calls[5];
     expect(may.from_date).toBe(current.from_date);
     expect(jun.from_date).toBe(current.from_date);
+    expect(may.to_date).toBe(current.to_date);
+    expect(jun.to_date).toBe(current.to_date);
     expect(may.forecast_until_date).not.toBe(jun.forecast_until_date);
   });
 

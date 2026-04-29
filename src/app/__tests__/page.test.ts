@@ -27,7 +27,7 @@ describe("Home page firstName extraction", () => {
 });
 
 describe("NAV_BOXES structure", () => {
-  it("has Forecast Chat and Forecast entries", async () => {
+  it("has Forecast Agent and Forecast entries", async () => {
     const { NAV_BOXES } = await import("@/app/page");
     const hrefs = NAV_BOXES.map((b) => b.href);
     expect(hrefs).toContain("/agent");

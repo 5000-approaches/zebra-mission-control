@@ -1,6 +1,6 @@
 import { test, expect } from "@playwright/test";
 
-test("unauthenticated home redirects to auth page", async ({ page }) => {
+test("[auth-flow] unauthenticated home redirects to auth page", async ({ page }) => {
   await page.goto("/", { waitUntil: "domcontentloaded" });
   await expect(page).toHaveURL(/\/auth/, { timeout: 10_000 });
   await expect(page.locator("h1")).toContainText("Mission Control", { timeout: 10_000 });

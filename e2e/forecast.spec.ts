@@ -1,25 +1,29 @@
 import { test, expect } from "@playwright/test";
 
-test("forecast chat page loads with chat input", async ({ page }) => {
+test("forecast agent page loads with chat input", async ({ page }) => {
   await page.goto("/agent", { waitUntil: "domcontentloaded" });
-  await expect(page.locator("h1")).toContainText("Forecast Chat", { timeout: 10_000 });
-  await expect(page.locator('input[type="text"]')).toBeAttached({ timeout: 5_000 });
+  await expect(page.locator("h1")).toContainText("Forecast Agent", { timeout: 10_000 });
+  await expect(page.locator("textarea")).toBeAttached({ timeout: 5_000 });
   await expect(page.locator('button[type="submit"]')).toBeAttached({ timeout: 5_000 });
 });
 
-test("sidebar shows Forecast Chat link under Workspace", async ({ page }) => {
+test("sidebar shows Forecast Agent link under Workspace", async ({ page }) => {
   await page.goto("/agent", { waitUntil: "domcontentloaded" });
-  const link = page.locator('a[href="/agent"]', { hasText: "Forecast Chat" });
+  const link = page.locator('a[href="/agent"]', { hasText: "Forecast Agent" });
   await expect(link.first()).toBeAttached({ timeout: 10_000 });
 });
 
 const MOCK_FORECAST = {
   months: [
+    { month: "2026-01", observed: 800000, dailyAverage: 8000, projected: 800000, adjustments: 0, calculatedAt: "2026-04-29T10:00:00.000Z" },
+    { month: "2026-02", observed: 850000, dailyAverage: 8000, projected: 850000, adjustments: 0, calculatedAt: "2026-04-29T10:00:00.000Z" },
+    { month: "2026-03", observed: 900000, dailyAverage: 8000, projected: 900000, adjustments: 0, calculatedAt: "2026-04-29T10:00:00.000Z" },
     { month: "2026-04", observed: 120000, dailyAverage: 8000, projected: 240000, adjustments: 5000, calculatedAt: "2026-04-29T10:00:00.000Z" },
-    { month: "2026-05", observed: 0, dailyAverage: 8000, projected: 250000, adjustments: 0, calculatedAt: "2026-04-29T10:00:00.000Z" },
-    { month: "2026-06", observed: 0, dailyAverage: 8000, projected: 260000, adjustments: 0, calculatedAt: "2026-04-29T10:00:00.000Z" },
+    { month: "2026-05", observed: 0, dailyAverage: 8000, projected: 250000, adjustments: 120000, calculatedAt: "2026-04-29T10:00:00.000Z" },
+    { month: "2026-06", observed: 0, dailyAverage: 8000, projected: 260000, adjustments: 120000, calculatedAt: "2026-04-29T10:00:00.000Z" },
   ],
-  totals: { observed: 120000, projected: 750000, adjustments: 5000 },
+  currentMonth: "2026-04",
+  totals: { observed: 2670000, projected: 3300000, adjustments: 245000 },
 };
 
 test("forecast page loads 3 KPI month cards", async ({ page }) => {
@@ -65,7 +69,7 @@ test("submitting a question streams AI response into chat", async ({ page }) => 
   await page.goto("/agent", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
-  await page.fill('input[type="text"]', "What is our billable forecast for April?");
+  await page.fill("textarea","What is our billable forecast for April?");
   await page.click('button[type="submit"]');
 
   const assistantMsg = page.locator('[data-testid="assistant-message"]');
@@ -93,7 +97,7 @@ test("assistant response renders markdown as HTML (headings, tables, bold)", asy
   await page.goto("/agent", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
-  await page.fill('input[type="text"]', "What's the July forecast?");
+  await page.fill("textarea","What's the July forecast?");
   await page.click('button[type="submit"]');
 
   const assistantMsg = page.locator('[data-testid="assistant-message"]').first();
@@ -126,7 +130,7 @@ test("tool errors render as a collapsible details block", async ({ page }) => {
   await page.goto("/agent", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
-  await page.fill('input[type="text"]', "Forecast for 2050?");
+  await page.fill("textarea","Forecast for 2050?");
   await page.click('button[type="submit"]');
 
   const assistantMsg = page.locator('[data-testid="assistant-message"]').first();

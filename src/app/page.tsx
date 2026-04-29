@@ -2,11 +2,16 @@
 
 import Link from "next/link";
 import { useSession } from "next-auth/react";
-import { MessageSquare, BarChart2 } from "lucide-react";
+import { MessageSquare, BarChart2, Receipt } from "lucide-react";
+import AttentionPanel from "@/components/AttentionPanel";
 
 export const NAV_BOXES = [
-  { href: "/agent", label: "Forecast Chat", icon: MessageSquare, description: "Chat with the AI forecast agent" },
+  { href: "/agent", label: "Forecast Agent", icon: MessageSquare, description: "Chat with the AI forecast agent" },
   { href: "/forecast", label: "Forecast", icon: BarChart2, description: "Deterministic revenue forecast" },
+];
+
+const DISABLED_BOXES = [
+  { label: "Billable forecast", icon: Receipt, description: "Coming soon" },
 ];
 
 export default function Home() {
@@ -50,7 +55,38 @@ export default function Home() {
             </p>
           </Link>
         ))}
+        {DISABLED_BOXES.map(({ label, icon: Icon, description }) => (
+          <div
+            key={label}
+            data-testid="disabled-nav-box"
+            aria-disabled="true"
+            className="rounded-xl p-6 block select-none"
+            style={{
+              background: "var(--page-surface)",
+              border: "1px solid var(--page-border)",
+              cursor: "not-allowed",
+              opacity: 0.5,
+            }}
+          >
+            <div className="flex items-center gap-3 mb-2">
+              <div
+                className="h-9 w-9 rounded-lg flex items-center justify-center"
+                style={{ background: "var(--page-border)" }}
+              >
+                <Icon size={18} style={{ color: "var(--page-text)", opacity: 0.5 }} />
+              </div>
+              <p className="font-semibold text-base" style={{ color: "var(--page-text)" }}>
+                {label}
+              </p>
+            </div>
+            <p className="text-sm" style={{ color: "var(--page-text)", opacity: 0.6 }}>
+              {description}
+            </p>
+          </div>
+        ))}
       </div>
+
+      <AttentionPanel />
     </div>
   );
 }

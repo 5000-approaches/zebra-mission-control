@@ -25,7 +25,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     heading: "Workspace",
     items: [
-      { href: "/agent", label: "Forecast Chat", icon: MessageSquare },
+      { href: "/agent", label: "Forecast Agent", icon: MessageSquare },
       { href: "/forecast", label: "Forecast", icon: BarChart2 },
       { href: "/billable-forecast", label: "Billable Forecast", icon: LineChart },
     ],

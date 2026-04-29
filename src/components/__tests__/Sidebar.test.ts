@@ -11,7 +11,7 @@ describe("NAV_SECTIONS structure", () => {
     expect(NAV_SECTIONS[0].items.some((i) => i.href === "/")).toBe(true);
   });
 
-  it("Workspace section contains Forecast Chat and Forecast", () => {
+  it("Workspace section contains Forecast Agent and Forecast", () => {
     const ws = NAV_SECTIONS.find((s) => s.heading === "Workspace");
     expect(ws).toBeDefined();
     const hrefs = ws!.items.map((i) => i.href);
