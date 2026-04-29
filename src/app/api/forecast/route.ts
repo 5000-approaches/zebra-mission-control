@@ -13,6 +13,8 @@ export type ForecastMonth = {
 
 export type ForecastApiResponse = {
   months: ForecastMonth[];
+  /** Oslo-local current month as YYYY-MM. Lets the UI classify past/current/future without re-deriving timezone. */
+  currentMonth: string;
   totals: {
     observed: number;
     projected: number;
@@ -254,7 +256,8 @@ export async function GET(req: Request) {
     adjustments: forecastMonths.reduce((s, m) => s + m.adjustments, 0),
   };
 
-  const response: ForecastApiResponse = { months: forecastMonths, totals };
+  const currentMonth = `${today.year}-${String(today.month).padStart(2, "0")}`;
+  const response: ForecastApiResponse = { months: forecastMonths, currentMonth, totals };
   return new Response(JSON.stringify(response), {
     headers: { "Content-Type": "application/json" },
   });

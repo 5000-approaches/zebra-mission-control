@@ -71,6 +71,8 @@ describe("GET /api/forecast", () => {
     const json = await res.json();
 
     expect(json.months).toHaveLength(6);
+    expect(json.currentMonth).toMatch(/^\d{4}-\d{2}$/);
+    expect(json.currentMonth).toBe(json.months[3].month);
     // Past months: observed = AnalysisPeriodTotal; projected = observed.
     expect(json.months[0].observed).toBeCloseTo(1180950.39);
     expect(json.months[0].projected).toBeCloseTo(1180950.39);
