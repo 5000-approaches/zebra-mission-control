@@ -56,9 +56,144 @@ jobs:
       - name: Tests
         run: npm test -- --coverage
 
+      - name: Check coverage waiver
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          WAIVED=$(gh pr view ${{ github.event.pull_request.number }} --json comments \
+            --jq '[.comments[].body | ascii_downcase | contains("coverage waived")] | any')
+          if [ "$WAIVED" = "true" ]; then
+            echo "COVERAGE_THRESHOLD=0" >> "$GITHUB_ENV"
+            echo "✅ Coverage waiver detected — threshold set to 0"
+          else
+            THRESHOLD="${{ vars.COVERAGE_MIN_DELTA }}"
+            THRESHOLD="${THRESHOLD:-80}"
+            echo "COVERAGE_THRESHOLD=$THRESHOLD" >> "$GITHUB_ENV"
+            echo "Coverage threshold: ${THRESHOLD}%"
+          fi
+
       - name: Report Coverage
         if: always()
         uses: davelosert/vitest-coverage-report-action@v2
+
+      - name: Enforce patch coverage
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          THRESHOLD="${COVERAGE_THRESHOLD:-80}"
+          if [ "$THRESHOLD" = "0" ]; then
+            echo "⏭️ Coverage enforcement skipped (waived)"
+            exit 0
+          fi
+          if [ ! -f coverage/coverage-final.json ]; then
+            echo "⚠️ No coverage data — skipping enforcement"
+            exit 0
+          fi
+          export PR_NUMBER="${{ github.event.pull_request.number }}"
+          export COVERAGE_THRESHOLD="$THRESHOLD"
+          node - <<'NODEEOF'
+          const fs = require('fs');
+          const { execSync } = require('child_process');
+
+          const prNumber = process.env.PR_NUMBER;
+          const threshold = parseInt(process.env.COVERAGE_THRESHOLD || '80');
+          const summaryFile = process.env.GITHUB_STEP_SUMMARY;
+
+          const coverage = JSON.parse(fs.readFileSync('coverage/coverage-final.json', 'utf8'));
+
+          let diff;
+          try {
+            diff = execSync(`gh pr diff ${prNumber}`, { encoding: 'utf8' });
+          } catch (e) {
+            console.log('⚠️ Could not get PR diff — skipping enforcement');
+            process.exit(0);
+          }
+
+          // Parse unified diff: collect added line numbers per source file
+          const fileAddedLines = {};
+          let currentFile = null;
+          let newLineNum = 0;
+          for (const line of diff.split('\n')) {
+            if (line.startsWith('+++ b/')) {
+              const p = line.slice(6).trim();
+              if (/\.(ts|tsx|js|jsx)$/.test(p) && !/\.(test|spec)\.|__tests__|\.d\.ts/.test(p)) {
+                currentFile = p;
+                fileAddedLines[currentFile] = fileAddedLines[currentFile] || new Set();
+              } else {
+                currentFile = null;
+              }
+            } else if (line.startsWith('@@ ') && currentFile) {
+              const m = line.match(/@@ [^+]*\+(\d+)/);
+              if (m) newLineNum = parseInt(m[1]);
+            } else if (currentFile) {
+              if (line.startsWith('+')) {
+                fileAddedLines[currentFile].add(newLineNum++);
+              } else if (!line.startsWith('-')) {
+                newLineNum++;
+              }
+            }
+          }
+
+          const cwd = process.cwd();
+          const rows = [];
+          let totalNew = 0, totalCovered = 0, anyFail = false;
+
+          for (const [relFile, addedSet] of Object.entries(fileAddedLines)) {
+            if (!addedSet.size) continue;
+            const covKey = Object.keys(coverage).find(
+              k => k === `${cwd}/${relFile}` || k.endsWith(`/${relFile}`)
+            );
+            if (!covKey) {
+              rows.push(`| \`${relFile}\` | ${addedSet.size} | — | N/A | ⚪ no cov data |`);
+              continue;
+            }
+            const { statementMap: sm, s } = coverage[covKey];
+            let fileExec = 0, fileCov = 0;
+            for (const ln of addedSet) {
+              const stmts = Object.entries(sm).filter(([, loc]) => loc.start.line <= ln && ln <= loc.end.line);
+              if (!stmts.length) continue; // non-executable line
+              fileExec++;
+              if (stmts.some(([id]) => (s[id] || 0) > 0)) fileCov++;
+            }
+            if (!fileExec) {
+              rows.push(`| \`${relFile}\` | ${addedSet.size} | — | N/A | ⚪ no exec lines |`);
+              continue;
+            }
+            const pct = Math.round((fileCov / fileExec) * 100);
+            totalNew += fileExec; totalCovered += fileCov;
+            const ok = pct >= threshold;
+            if (!ok) anyFail = true;
+            rows.push(`| \`${relFile}\` | ${fileExec} | ${fileCov} | ${pct}% | ${ok ? '✅' : `❌ below ${threshold}%`} |`);
+          }
+
+          const totalPct = totalNew > 0 ? Math.round((totalCovered / totalNew) * 100) : 100;
+          const lines = [
+            '## Coverage Delta',
+            '| File | New exec lines | Covered | % | Status |',
+            '|------|----------------|---------|---|--------|',
+            ...rows,
+            `| **Total** | **${totalNew}** | **${totalCovered}** | **${totalPct}%** | ${anyFail ? '❌' : '✅'} |`,
+          ];
+          const summary = lines.join('\n') + '\n';
+          if (summaryFile) fs.appendFileSync(summaryFile, summary);
+          console.log(summary);
+
+          if (anyFail) {
+            console.error(`❌ Patch coverage below ${threshold}%. Add PR comment 'coverage waived' to bypass.`);
+            process.exit(1);
+          }
+          console.log(`✅ Patch coverage meets the ${threshold}% threshold.`);
+          NODEEOF
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-html
+          path: coverage/
+          retention-days: 14
 
       - name: Build
         run: npm run build
