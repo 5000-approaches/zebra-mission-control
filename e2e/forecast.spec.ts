@@ -23,7 +23,8 @@ test("submitting a question streams AI response into chat", async ({ page }) => 
     });
   });
 
-  await page.goto("/forecast", { waitUntil: "domcontentloaded" });
+  await page.goto("/forecast", { waitUntil: "load" });
+  await page.waitForLoadState("networkidle");
 
   await page.fill('input[type="text"]', "What is our billable forecast for April?");
   await page.click('button[type="submit"]');
