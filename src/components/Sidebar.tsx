@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Home, FolderKanban, Activity, Settings, X } from "lucide-react";
+import { signOut, useSession } from "next-auth/react";
+import { Home, FolderKanban, Activity, Settings, X, LogOut } from "lucide-react";
 import DeployBadge from "./DeployBadge";
 
 type NavItem = {
@@ -79,6 +80,7 @@ interface SidebarProps {
 
 export default function Sidebar({ isOpen, onClose }: SidebarProps) {
   const pathname = usePathname();
+  const { data: session } = useSession();
 
   return (
     <>
@@ -153,6 +155,21 @@ export default function Sidebar({ isOpen, onClose }: SidebarProps) {
         <div className="px-4 py-4 space-y-3">
           <div className="h-px" style={{ background: "rgba(255,255,255,0.08)" }} />
           <DeployBadge />
+          <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-white/50 truncate min-w-0 flex-1">
+              {session?.user?.email ?? ""}
+            </p>
+            <button
+              onClick={() => signOut({ callbackUrl: "/auth" })}
+              className="flex-shrink-0 p-1.5 rounded-lg transition-colors"
+              style={{ color: "rgba(255,255,255,0.4)" }}
+              onMouseEnter={(e) => { e.currentTarget.style.color = "#ffffff"; e.currentTarget.style.background = "var(--sidebar-hover)"; }}
+              onMouseLeave={(e) => { e.currentTarget.style.color = "rgba(255,255,255,0.4)"; e.currentTarget.style.background = "transparent"; }}
+              title="Sign out"
+            >
+              <LogOut size={14} />
+            </button>
+          </div>
         </div>
       </aside>
     </>

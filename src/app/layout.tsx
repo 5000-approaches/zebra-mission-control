@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Geist } from "next/font/google";
+import { SessionProvider } from "next-auth/react";
 import { SchemeProvider } from "@/components/scheme-provider";
 import { ModeProvider } from "@/components/mode-provider";
 import { DEFAULT_SCHEME, SCHEME_STORAGE_KEY, DEFAULT_MODE, MODE_STORAGE_KEY } from "@/lib/schemes";
@@ -42,11 +43,13 @@ export default function RootLayout({
         <script dangerouslySetInnerHTML={{ __html: flashScript }} />
       </head>
       <body className="min-h-full" style={{ backgroundColor: "var(--page-bg)", color: "var(--page-text)" }}>
-        <SchemeProvider>
-          <ModeProvider>
-            <AppShell>{children}</AppShell>
-          </ModeProvider>
-        </SchemeProvider>
+        <SessionProvider>
+          <SchemeProvider>
+            <ModeProvider>
+              <AppShell>{children}</AppShell>
+            </ModeProvider>
+          </SchemeProvider>
+        </SessionProvider>
       </body>
     </html>
   );
