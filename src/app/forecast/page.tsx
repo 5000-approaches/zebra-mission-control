@@ -3,7 +3,26 @@
 import { useRef, useState, useEffect, FormEvent } from "react";
 import Markdown from "@/components/Markdown";
 
+type ToolError = { tool: string; input: unknown; error: string };
 type Message = { role: "user" | "assistant"; content: string };
+
+const TOOL_ERRORS_MARKER = "<<<TOOL_ERRORS>>>";
+const TOOL_ERRORS_END = "<<<END_TOOL_ERRORS>>>";
+
+function splitToolErrors(content: string): { text: string; errors: ToolError[] } {
+  const start = content.indexOf(TOOL_ERRORS_MARKER);
+  if (start === -1) return { text: content, errors: [] };
+  const end = content.indexOf(TOOL_ERRORS_END, start);
+  const text = content.slice(0, start).trimEnd();
+  const jsonEnd = end === -1 ? content.length : end;
+  const json = content.slice(start + TOOL_ERRORS_MARKER.length, jsonEnd);
+  try {
+    const errors = JSON.parse(json) as ToolError[];
+    return { text, errors };
+  } catch {
+    return { text, errors: [] };
+  }
+}
 
 export default function ForecastPage() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -104,7 +123,15 @@ export default function ForecastPage() {
             >
               {msg.role === "assistant" ? (
                 msg.content ? (
-                  <Markdown>{msg.content}</Markdown>
+                  (() => {
+                    const { text, errors } = splitToolErrors(msg.content);
+                    return (
+                      <>
+                        {text && <Markdown>{text}</Markdown>}
+                        {errors.length > 0 && <ToolErrorsBlock errors={errors} />}
+                      </>
+                    );
+                  })()
                 ) : loading && i === messages.length - 1 ? (
                   "…"
                 ) : (
@@ -153,5 +180,48 @@ export default function ForecastPage() {
         </button>
       </form>
     </div>
+  );
+}
+
+function ToolErrorsBlock({ errors }: { errors: ToolError[] }) {
+  return (
+    <details
+      data-testid="tool-errors"
+      className="mt-3 rounded-lg border text-xs"
+      style={{
+        background: "#fdf2f8",
+        borderColor: "#fbcfe8",
+        color: "#9d174d",
+      }}
+    >
+      <summary className="cursor-pointer select-none px-3 py-2 font-medium">
+        {errors.length === 1
+          ? "Show technical error details"
+          : `Show technical error details (${errors.length})`}
+      </summary>
+      <div className="px-3 pb-3 space-y-3">
+        {errors.map((err, idx) => (
+          <div key={idx} className="space-y-1">
+            <p className="font-semibold">
+              Tool: <code className="font-mono">{err.tool}</code>
+            </p>
+            {err.input != null && (
+              <pre
+                className="overflow-x-auto rounded p-2 font-mono text-[11px]"
+                style={{ background: "#fce7f3" }}
+              >
+                {JSON.stringify(err.input, null, 2)}
+              </pre>
+            )}
+            <pre
+              className="overflow-x-auto rounded p-2 font-mono text-[11px] whitespace-pre-wrap"
+              style={{ background: "#fce7f3" }}
+            >
+              {err.error}
+            </pre>
+          </div>
+        ))}
+      </div>
+    </details>
   );
 }
