@@ -1,20 +1,24 @@
 import { test, expect } from "@playwright/test";
 
-test("forecast page loads with chat input", async ({ page }) => {
-  await page.goto("/forecast", { waitUntil: "domcontentloaded" });
+test("forecast chat page loads with chat input", async ({ page }) => {
+  await page.goto("/agent", { waitUntil: "domcontentloaded" });
   await expect(page.locator("h1")).toContainText("Forecast Chat", { timeout: 10_000 });
   await expect(page.locator('input[type="text"]')).toBeAttached({ timeout: 5_000 });
   await expect(page.locator('button[type="submit"]')).toBeAttached({ timeout: 5_000 });
 });
 
-test("sidebar shows Forecast link under Workspace", async ({ page }) => {
+test("sidebar shows Forecast Chat link under Workspace", async ({ page }) => {
+  await page.goto("/agent", { waitUntil: "domcontentloaded" });
+  const link = page.locator('a[href="/agent"]', { hasText: "Forecast Chat" });
+  await expect(link.first()).toBeAttached({ timeout: 10_000 });
+});
+
+test("forecast page is an empty placeholder", async ({ page }) => {
   await page.goto("/forecast", { waitUntil: "domcontentloaded" });
-  const forecastLink = page.locator('a[href="/forecast"]', { hasText: "Forecast" });
-  await expect(forecastLink.first()).toBeAttached({ timeout: 10_000 });
+  await expect(page.locator("h1")).toContainText("Forecast", { timeout: 10_000 });
 });
 
 test("submitting a question streams AI response into chat", async ({ page }) => {
-  // Intercept the API route and return a mocked streamed response
   await page.route("/api/forecast-chat", async (route) => {
     await route.fulfill({
       status: 200,
@@ -23,7 +27,7 @@ test("submitting a question streams AI response into chat", async ({ page }) => 
     });
   });
 
-  await page.goto("/forecast", { waitUntil: "load" });
+  await page.goto("/agent", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
   await page.fill('input[type="text"]', "What is our billable forecast for April?");
