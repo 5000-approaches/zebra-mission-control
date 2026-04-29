@@ -1,20 +1,59 @@
 import { test, expect } from "@playwright/test";
 
-test("forecast page loads with chat input", async ({ page }) => {
-  await page.goto("/forecast", { waitUntil: "domcontentloaded" });
+test("forecast chat page loads with chat input", async ({ page }) => {
+  await page.goto("/agent", { waitUntil: "domcontentloaded" });
   await expect(page.locator("h1")).toContainText("Forecast Chat", { timeout: 10_000 });
   await expect(page.locator('input[type="text"]')).toBeAttached({ timeout: 5_000 });
   await expect(page.locator('button[type="submit"]')).toBeAttached({ timeout: 5_000 });
 });
 
-test("sidebar shows Forecast link under Workspace", async ({ page }) => {
+test("sidebar shows Forecast Chat link under Workspace", async ({ page }) => {
+  await page.goto("/agent", { waitUntil: "domcontentloaded" });
+  const link = page.locator('a[href="/agent"]', { hasText: "Forecast Chat" });
+  await expect(link.first()).toBeAttached({ timeout: 10_000 });
+});
+
+const MOCK_FORECAST = {
+  months: [
+    { month: "2026-04", observed: 120000, dailyAverage: 8000, projected: 240000, adjustments: 5000, calculatedAt: "2026-04-29T10:00:00.000Z" },
+    { month: "2026-05", observed: 0, dailyAverage: 8000, projected: 250000, adjustments: 0, calculatedAt: "2026-04-29T10:00:00.000Z" },
+    { month: "2026-06", observed: 0, dailyAverage: 8000, projected: 260000, adjustments: 0, calculatedAt: "2026-04-29T10:00:00.000Z" },
+  ],
+  totals: { observed: 120000, projected: 750000, adjustments: 5000 },
+};
+
+test("forecast page loads 3 KPI month cards", async ({ page }) => {
+  await page.route("/api/forecast", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(MOCK_FORECAST),
+    });
+  });
+
   await page.goto("/forecast", { waitUntil: "domcontentloaded" });
-  const forecastLink = page.locator('a[href="/forecast"]', { hasText: "Forecast" });
-  await expect(forecastLink.first()).toBeAttached({ timeout: 10_000 });
+  await expect(page.locator("h1")).toContainText("Forecast", { timeout: 10_000 });
+
+  const cards = page.locator('[data-testid="month-card"]');
+  await expect(cards).toHaveCount(3, { timeout: 10_000 });
+  await expect(cards.first()).toContainText("240");
+});
+
+test("forecast page screenshot with mocked data", async ({ page }) => {
+  await page.route("/api/forecast", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify(MOCK_FORECAST),
+    });
+  });
+
+  await page.goto("/forecast", { waitUntil: "domcontentloaded" });
+  await expect(page.locator('[data-testid="month-card"]')).toHaveCount(3, { timeout: 10_000 });
+  await page.screenshot({ path: "e2e/screenshots/forecast.png", fullPage: true });
 });
 
 test("submitting a question streams AI response into chat", async ({ page }) => {
-  // Intercept the API route and return a mocked streamed response
   await page.route("/api/forecast-chat", async (route) => {
     await route.fulfill({
       status: 200,
@@ -23,7 +62,7 @@ test("submitting a question streams AI response into chat", async ({ page }) => 
     });
   });
 
-  await page.goto("/forecast", { waitUntil: "load" });
+  await page.goto("/agent", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
   await page.fill('input[type="text"]', "What is our billable forecast for April?");
@@ -51,7 +90,7 @@ test("assistant response renders markdown as HTML (headings, tables, bold)", asy
     });
   });
 
-  await page.goto("/forecast", { waitUntil: "load" });
+  await page.goto("/agent", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
   await page.fill('input[type="text"]', "What's the July forecast?");
@@ -84,7 +123,7 @@ test("tool errors render as a collapsible details block", async ({ page }) => {
     });
   });
 
-  await page.goto("/forecast", { waitUntil: "load" });
+  await page.goto("/agent", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
   await page.fill('input[type="text"]', "Forecast for 2050?");

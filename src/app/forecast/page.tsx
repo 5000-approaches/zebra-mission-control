@@ -1,227 +1,197 @@
 "use client";
 
-import { useRef, useState, useEffect, FormEvent } from "react";
-import Markdown from "@/components/Markdown";
+export const dynamic = "force-dynamic";
 
-type ToolError = { tool: string; input: unknown; error: string };
-type Message = { role: "user" | "assistant"; content: string };
+import { useEffect, useState } from "react";
+import type { ForecastApiResponse, ForecastMonth } from "@/app/api/forecast/route";
 
-const TOOL_ERRORS_MARKER = "<<<TOOL_ERRORS>>>";
-const TOOL_ERRORS_END = "<<<END_TOOL_ERRORS>>>";
-
-function splitToolErrors(content: string): { text: string; errors: ToolError[] } {
-  const start = content.indexOf(TOOL_ERRORS_MARKER);
-  if (start === -1) return { text: content, errors: [] };
-  const end = content.indexOf(TOOL_ERRORS_END, start);
-  const text = content.slice(0, start).trimEnd();
-  const jsonEnd = end === -1 ? content.length : end;
-  const json = content.slice(start + TOOL_ERRORS_MARKER.length, jsonEnd);
-  try {
-    const errors = JSON.parse(json) as ToolError[];
-    return { text, errors };
-  } catch {
-    return { text, errors: [] };
-  }
+function fmt(n: number) {
+  return n.toLocaleString("nb-NO", { maximumFractionDigits: 0 });
 }
 
-export default function ForecastPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
+function timeAgo(isoString: string): string {
+  const diff = Date.now() - new Date(isoString).getTime();
+  const mins = Math.floor(diff / 60_000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+function formatMonthLabel(yyyyMM: string): string {
+  const [year, month] = yyyyMM.split("-");
+  return new Date(parseInt(year), parseInt(month) - 1, 1).toLocaleString("en-GB", {
+    month: "long",
+    year: "numeric",
+  });
+}
 
-  async function handleSend(e?: FormEvent) {
-    e?.preventDefault();
-    const text = input.trim();
-    if (!text || loading) return;
-
-    const userMessage: Message = { role: "user", content: text };
-    const nextMessages = [...messages, userMessage];
-    setMessages(nextMessages);
-    setInput("");
-    setLoading(true);
-
-    const assistantMessage: Message = { role: "assistant", content: "" };
-    setMessages((prev) => [...prev, assistantMessage]);
-
-    try {
-      const res = await fetch("/api/forecast-chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: nextMessages }),
-      });
-
-      if (!res.ok || !res.body) {
-        const detail = (await res.text().catch(() => "")) || res.statusText || `HTTP ${res.status}`;
-        setMessages((prev) => [
-          ...prev.slice(0, -1),
-          { role: "assistant", content: `Error ${res.status}: ${detail}` },
-        ]);
-        return;
-      }
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        const chunk = decoder.decode(value, { stream: true });
-        setMessages((prev) => {
-          const last = prev[prev.length - 1];
-          return [...prev.slice(0, -1), { ...last, content: last.content + chunk }];
-        });
-      }
-    } finally {
-      setLoading(false);
-    }
-  }
-
+function MonthCard({ data }: { data: ForecastMonth }) {
   return (
     <div
-      className="flex flex-col h-screen"
-      style={{ background: "var(--page-bg)" }}
+      data-testid="month-card"
+      className="rounded-2xl p-6 flex flex-col gap-3"
+      style={{
+        background: "var(--page-surface)",
+        border: "1px solid var(--page-border)",
+      }}
     >
-      <div className="px-6 py-5 border-b flex-shrink-0" style={{ borderColor: "var(--page-border)" }}>
-        <h1 className="text-xl font-bold" style={{ color: "var(--page-text)" }}>
-          Forecast Chat
-        </h1>
-        <p className="text-sm mt-0.5" style={{ color: "var(--page-text)", opacity: 0.55 }}>
-          Ask billing and revenue questions backed by PowerOffice data
-        </p>
+      <div className="text-xs font-semibold uppercase tracking-widest opacity-50" style={{ color: "var(--page-text)" }}>
+        {formatMonthLabel(data.month)}
       </div>
-
-      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
-        {messages.length === 0 && (
-          <p className="text-sm text-center mt-12" style={{ color: "var(--page-text)", opacity: 0.4 }}>
-            Ask a question like &ldquo;What is our billable forecast for April?&rdquo;
-          </p>
-        )}
-        {messages.map((msg, i) => (
-          <div
-            key={i}
-            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-          >
-            <div
-              data-testid={msg.role === "assistant" ? "assistant-message" : "user-message"}
-              className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm ${
-                msg.role === "user" ? "whitespace-pre-wrap" : ""
-              }`}
-              style={
-                msg.role === "user"
-                  ? { background: "var(--accent-lighter)", color: "var(--accent-darker)" }
-                  : {
-                      background: "var(--page-surface)",
-                      border: "1px solid var(--page-border)",
-                      color: "var(--page-text)",
-                    }
-              }
-            >
-              {msg.role === "assistant" ? (
-                msg.content ? (
-                  (() => {
-                    const { text, errors } = splitToolErrors(msg.content);
-                    return (
-                      <>
-                        {text && <Markdown>{text}</Markdown>}
-                        {errors.length > 0 && <ToolErrorsBlock errors={errors} />}
-                      </>
-                    );
-                  })()
-                ) : loading && i === messages.length - 1 ? (
-                  "…"
-                ) : (
-                  ""
-                )
-              ) : (
-                msg.content
-              )}
-            </div>
-          </div>
-        ))}
-        <div ref={bottomRef} />
+      <div className="text-4xl font-bold" style={{ color: "var(--accent)" }}>
+        {fmt(data.projected)} <span className="text-lg font-normal opacity-60">NOK</span>
       </div>
-
-      <form
-        onSubmit={handleSend}
-        className="flex-shrink-0 px-6 py-4 border-t flex gap-3"
-        style={{ borderColor: "var(--page-border)", background: "var(--page-bg)" }}
-      >
-        <input
-          type="text"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          placeholder="Ask a forecast question…"
-          disabled={loading}
-          className="flex-1 rounded-xl px-4 py-2.5 text-sm outline-none transition-colors"
-          style={{
-            background: "var(--page-surface)",
-            border: "1px solid var(--page-border)",
-            color: "var(--page-text)",
-          }}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-        />
-        <button
-          type="submit"
-          disabled={loading || !input.trim()}
-          className="px-4 py-2.5 rounded-xl text-sm font-medium transition-opacity disabled:opacity-40"
-          style={{ background: "var(--accent)", color: "white" }}
-        >
-          Send
-        </button>
-      </form>
+      <div className="flex flex-col gap-1.5 text-sm" style={{ color: "var(--page-text)" }}>
+        <div className="flex justify-between">
+          <span className="opacity-60">Observed to date</span>
+          <span className="font-medium">{fmt(data.observed)} NOK</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="opacity-60">Daily average</span>
+          <span className="font-medium">{fmt(data.dailyAverage)} NOK</span>
+        </div>
+        <div className="flex justify-between">
+          <span className="opacity-60">Adjustments</span>
+          <span className="font-medium">{fmt(data.adjustments)} NOK</span>
+        </div>
+      </div>
+      <div className="text-xs opacity-40 mt-1" style={{ color: "var(--page-text)" }}>
+        Calculated {timeAgo(data.calculatedAt)}
+      </div>
     </div>
   );
 }
 
-function ToolErrorsBlock({ errors }: { errors: ToolError[] }) {
+function ForecastChart({ months }: { months: ForecastMonth[] }) {
+  const maxVal = Math.max(...months.flatMap((m) => [m.projected, m.observed]), 1);
+  const barW = 48;
+  const groupW = 120;
+  const chartH = 180;
+  const chartW = months.length * groupW + 40;
+  const padLeft = 20;
+  const padBottom = 40;
+  const innerH = chartH - padBottom;
+
   return (
-    <details
-      data-testid="tool-errors"
-      className="mt-3 rounded-lg border text-xs"
-      style={{
-        background: "#fdf2f8",
-        borderColor: "#fbcfe8",
-        color: "#9d174d",
-      }}
+    <div
+      className="rounded-2xl p-6"
+      style={{ background: "var(--page-surface)", border: "1px solid var(--page-border)" }}
     >
-      <summary className="cursor-pointer select-none px-3 py-2 font-medium">
-        {errors.length === 1
-          ? "Show technical error details"
-          : `Show technical error details (${errors.length})`}
-      </summary>
-      <div className="px-3 pb-3 space-y-3">
-        {errors.map((err, idx) => (
-          <div key={idx} className="space-y-1">
-            <p className="font-semibold">
-              Tool: <code className="font-mono">{err.tool}</code>
-            </p>
-            {err.input != null && (
-              <pre
-                className="overflow-x-auto rounded p-2 font-mono text-[11px]"
-                style={{ background: "#fce7f3" }}
-              >
-                {JSON.stringify(err.input, null, 2)}
-              </pre>
-            )}
-            <pre
-              className="overflow-x-auto rounded p-2 font-mono text-[11px] whitespace-pre-wrap"
-              style={{ background: "#fce7f3" }}
-            >
-              {err.error}
-            </pre>
-          </div>
-        ))}
+      <div className="flex items-center gap-4 mb-4">
+        <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--page-text)", opacity: 0.6 }}>
+          <div className="w-3 h-3 rounded-sm" style={{ background: "var(--page-border)" }} />
+          Projected
+        </div>
+        <div className="flex items-center gap-1.5 text-xs" style={{ color: "var(--page-text)", opacity: 0.6 }}>
+          <div className="w-3 h-3 rounded-sm" style={{ background: "var(--accent)" }} />
+          Observed
+        </div>
       </div>
-    </details>
+      <svg width={chartW} height={chartH} style={{ overflow: "visible" }}>
+        {months.map((m, i) => {
+          const projH = (m.projected / maxVal) * innerH;
+          const obsH = (m.observed / maxVal) * innerH;
+          const x = padLeft + i * groupW + (groupW - barW) / 2;
+          return (
+            <g key={m.month}>
+              <rect
+                x={x}
+                y={innerH - projH}
+                width={barW}
+                height={projH}
+                rx={4}
+                fill="var(--page-border)"
+              />
+              <rect
+                x={x}
+                y={innerH - obsH}
+                width={barW}
+                height={obsH}
+                rx={4}
+                fill="var(--accent)"
+                opacity={0.85}
+              />
+              <text
+                x={x + barW / 2}
+                y={innerH + 16}
+                textAnchor="middle"
+                fontSize={11}
+                fill="var(--page-text)"
+                opacity={0.55}
+              >
+                {new Date(parseInt(m.month.split("-")[0]), parseInt(m.month.split("-")[1]) - 1, 1)
+                  .toLocaleString("en-GB", { month: "short" })}
+              </text>
+            </g>
+          );
+        })}
+      </svg>
+    </div>
+  );
+}
+
+export default function ForecastPage() {
+  const [data, setData] = useState<ForecastApiResponse | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    fetch("/api/forecast")
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error ?? `HTTP ${res.status}`);
+        }
+        return res.json() as Promise<ForecastApiResponse>;
+      })
+      .then((d) => setData(d))
+      .catch((err: Error) => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  return (
+    <div className="p-8 md:p-12 max-w-5xl flex flex-col gap-8">
+      <div>
+        <h1 className="text-3xl font-bold mb-2" style={{ color: "var(--page-text)" }}>
+          Forecast
+        </h1>
+        <p className="text-sm" style={{ color: "var(--page-text)", opacity: 0.55 }}>
+          Deterministic revenue forecast — 6-month window with 2 months ahead extrapolated
+        </p>
+      </div>
+
+      {loading && (
+        <div className="flex items-center justify-center py-16 opacity-40" style={{ color: "var(--page-text)" }}>
+          Loading…
+        </div>
+      )}
+
+      {!loading && error && (
+        <div
+          className="rounded-xl p-4 text-sm"
+          style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#991b1b" }}
+        >
+          {error}
+        </div>
+      )}
+
+      {!loading && !error && data && (() => {
+        // 6-month window: split into 4 historical-or-current and 2 future for cards.
+        // Last 3 (current + next 2) shown as detail cards; chart shows all 6.
+        const cardMonths = data.months.slice(-3);
+        return (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {cardMonths.map((m) => (
+                <MonthCard key={m.month} data={m} />
+              ))}
+            </div>
+            <ForecastChart months={data.months} />
+          </>
+        );
+      })()}
+    </div>
   );
 }

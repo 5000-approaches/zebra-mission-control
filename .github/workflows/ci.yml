@@ -216,6 +216,8 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run Playwright e2e
+        env:
+          BYPASS_AUTH: "true"
         run: npx playwright test
 
       - name: Upload Playwright report
