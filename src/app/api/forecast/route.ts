@@ -57,12 +57,12 @@ export async function GET(req: Request) {
   }
 
   const toolNames = tools.map((t) => t.name);
-  const forecastTool = toolNames.find((n) => n === "getForecast");
+  const forecastTool = toolNames.find((n) => n === "forecast");
 
   if (!forecastTool) {
     return new Response(
       JSON.stringify({
-        error: `No getForecast tool found. Available tools: ${toolNames.join(", ")}`,
+        error: `No forecast tool found. Available tools: ${toolNames.join(", ")}`,
       }),
       { status: 501, headers: { "Content-Type": "application/json" } }
     );
@@ -72,7 +72,7 @@ export async function GET(req: Request) {
 
   try {
     const results = await Promise.all(
-      months.map((month) => callTool("getForecast", { month }))
+      months.map((month) => callTool("forecast", { month }))
     );
 
     const forecastMonths: ForecastMonth[] = results.map((result, i) => {
