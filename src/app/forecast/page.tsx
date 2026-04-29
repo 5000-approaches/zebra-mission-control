@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState, useEffect, FormEvent } from "react";
+import Markdown from "@/components/Markdown";
 
 type Message = { role: "user" | "assistant"; content: string };
 
@@ -88,7 +89,9 @@ export default function ForecastPage() {
           >
             <div
               data-testid={msg.role === "assistant" ? "assistant-message" : "user-message"}
-              className="max-w-[75%] rounded-2xl px-4 py-3 text-sm whitespace-pre-wrap"
+              className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm ${
+                msg.role === "user" ? "whitespace-pre-wrap" : ""
+              }`}
               style={
                 msg.role === "user"
                   ? { background: "var(--accent-lighter)", color: "var(--accent-darker)" }
@@ -99,7 +102,17 @@ export default function ForecastPage() {
                     }
               }
             >
-              {msg.content || (loading && i === messages.length - 1 ? "…" : "")}
+              {msg.role === "assistant" ? (
+                msg.content ? (
+                  <Markdown>{msg.content}</Markdown>
+                ) : loading && i === messages.length - 1 ? (
+                  "…"
+                ) : (
+                  ""
+                )
+              ) : (
+                msg.content
+              )}
             </div>
           </div>
         ))}
