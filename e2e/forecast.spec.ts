@@ -15,11 +15,15 @@ test("sidebar shows Forecast Agent link under Workspace", async ({ page }) => {
 
 const MOCK_FORECAST = {
   months: [
+    { month: "2026-01", observed: 800000, dailyAverage: 8000, projected: 800000, adjustments: 0, calculatedAt: "2026-04-29T10:00:00.000Z" },
+    { month: "2026-02", observed: 850000, dailyAverage: 8000, projected: 850000, adjustments: 0, calculatedAt: "2026-04-29T10:00:00.000Z" },
+    { month: "2026-03", observed: 900000, dailyAverage: 8000, projected: 900000, adjustments: 0, calculatedAt: "2026-04-29T10:00:00.000Z" },
     { month: "2026-04", observed: 120000, dailyAverage: 8000, projected: 240000, adjustments: 5000, calculatedAt: "2026-04-29T10:00:00.000Z" },
-    { month: "2026-05", observed: 0, dailyAverage: 8000, projected: 250000, adjustments: 0, calculatedAt: "2026-04-29T10:00:00.000Z" },
-    { month: "2026-06", observed: 0, dailyAverage: 8000, projected: 260000, adjustments: 0, calculatedAt: "2026-04-29T10:00:00.000Z" },
+    { month: "2026-05", observed: 0, dailyAverage: 8000, projected: 250000, adjustments: 120000, calculatedAt: "2026-04-29T10:00:00.000Z" },
+    { month: "2026-06", observed: 0, dailyAverage: 8000, projected: 260000, adjustments: 120000, calculatedAt: "2026-04-29T10:00:00.000Z" },
   ],
-  totals: { observed: 120000, projected: 750000, adjustments: 5000 },
+  currentMonth: "2026-04",
+  totals: { observed: 2670000, projected: 3300000, adjustments: 245000 },
 };
 
 test("forecast page loads 3 KPI month cards", async ({ page }) => {
