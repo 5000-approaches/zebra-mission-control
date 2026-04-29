@@ -3,20 +3,20 @@ import type { McpTool } from "@/lib/poweroffice-mcp";
 
 export const dynamic = "force-dynamic";
 
-export type IntegrationSkills = {
+export type IntegrationTools = {
   id: string;
   label: string;
   tools: Pick<McpTool, "name" | "description">[];
   error?: string;
 };
 
-export type SkillsApiResponse = {
-  integrations: IntegrationSkills[];
+export type ToolsApiResponse = {
+  integrations: IntegrationTools[];
 };
 
 export async function GET(): Promise<Response> {
   const integrations = await Promise.all(
-    INTEGRATIONS.map(async (i): Promise<IntegrationSkills> => {
+    INTEGRATIONS.map(async (i): Promise<IntegrationTools> => {
       try {
         const tools = await i.loadTools();
         return {
@@ -35,6 +35,6 @@ export async function GET(): Promise<Response> {
     })
   );
 
-  const body: SkillsApiResponse = { integrations };
+  const body: ToolsApiResponse = { integrations };
   return Response.json(body);
 }
