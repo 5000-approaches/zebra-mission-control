@@ -136,7 +136,7 @@ export default function ForecastPage() {
     >
       <div className="px-6 py-5 border-b flex-shrink-0" style={{ borderColor: "var(--page-border)" }}>
         <h1 className="text-xl font-bold" style={{ color: "var(--page-text)" }}>
-          Forecast Chat
+          Forecast Agent
         </h1>
         <p className="text-sm mt-0.5" style={{ color: "var(--page-text)", opacity: 0.55 }}>
           Ask billing and revenue questions backed by PowerOffice data

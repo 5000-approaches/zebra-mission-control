@@ -1,15 +1,15 @@
 import { test, expect } from "@playwright/test";
 
-test("forecast chat page loads with chat input", async ({ page }) => {
+test("forecast agent page loads with chat input", async ({ page }) => {
   await page.goto("/agent", { waitUntil: "domcontentloaded" });
-  await expect(page.locator("h1")).toContainText("Forecast Chat", { timeout: 10_000 });
+  await expect(page.locator("h1")).toContainText("Forecast Agent", { timeout: 10_000 });
   await expect(page.locator('input[type="text"]')).toBeAttached({ timeout: 5_000 });
   await expect(page.locator('button[type="submit"]')).toBeAttached({ timeout: 5_000 });
 });
 
-test("sidebar shows Forecast Chat link under Workspace", async ({ page }) => {
+test("sidebar shows Forecast Agent link under Workspace", async ({ page }) => {
   await page.goto("/agent", { waitUntil: "domcontentloaded" });
-  const link = page.locator('a[href="/agent"]', { hasText: "Forecast Chat" });
+  const link = page.locator('a[href="/agent"]', { hasText: "Forecast Agent" });
   await expect(link.first()).toBeAttached({ timeout: 10_000 });
 });
 
