@@ -7,6 +7,8 @@ export type ForecastMonth = {
   projected: number;
   adjustments: number;
   calculatedAt: string;
+  /** Present only when ?debug=1 — raw text returned by the MCP `forecast` tool. */
+  rawText?: string;
 };
 
 export type ForecastApiResponse = {
@@ -18,6 +20,10 @@ export type ForecastApiResponse = {
   };
 };
 
+/**
+ * 6-month rolling window: 3 months before current, current, 2 months ahead.
+ * For 2026-04 this yields [2026-01, 2026-02, 2026-03, 2026-04, 2026-05, 2026-06].
+ */
 function getOsloMonths(): string[] {
   const now = new Date();
   const parts = new Intl.DateTimeFormat("en-US", {
@@ -28,12 +34,26 @@ function getOsloMonths(): string[] {
   const year = parseInt(parts.find((p) => p.type === "year")!.value);
   const month = parseInt(parts.find((p) => p.type === "month")!.value) - 1; // 0-indexed
 
-  return [0, 1, 2].map((offset) => {
+  return [-3, -2, -1, 0, 1, 2].map((offset) => {
     const m = month + offset;
     const y = year + Math.floor(m / 12);
-    const mo = (m % 12) + 1;
+    const mo = ((m % 12) + 12) % 12 + 1;
     return `${y}-${String(mo).padStart(2, "0")}`;
   });
+}
+
+type RawForecastShape = Record<string, unknown>;
+
+function pickNumber(obj: RawForecastShape, ...keys: string[]): number {
+  for (const key of keys) {
+    const v = obj[key];
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string") {
+      const parsed = parseFloat(v.replace(/[,\s]/g, ""));
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return 0;
 }
 
 export async function GET(req: Request) {
@@ -44,6 +64,9 @@ export async function GET(req: Request) {
       return new Response("Unauthorized", { status: 401 });
     }
   }
+
+  const url = new URL(req.url);
+  const debug = url.searchParams.get("debug") === "1";
 
   let tools;
   try {
@@ -76,16 +99,42 @@ export async function GET(req: Request) {
     );
 
     const forecastMonths: ForecastMonth[] = results.map((result, i) => {
-      const text = result.content[0].text ?? "{}";
-      const data = JSON.parse(text);
-      return {
+      const text = result.content
+        .map((c) => c.text ?? "")
+        .join("\n")
+        .trim();
+
+      console.log(`[forecast] month=${months[i]} mcp.text=${text.slice(0, 500)}`);
+
+      let data: RawForecastShape = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        // text wasn't JSON — leave data empty, raw text still surfaced via debug
+      }
+
+      // Some MCP servers wrap the payload (e.g. { data: {...} }, { result: {...} })
+      const inner = (data.data && typeof data.data === "object" ? data.data : data.result && typeof data.result === "object" ? data.result : data) as RawForecastShape;
+
+      const observed = pickNumber(inner, "observed", "actual", "actualRevenue", "revenueObserved", "revenue", "totalRevenue", "billed");
+      const projected = pickNumber(inner, "projected", "forecast", "forecastTotal", "projectedRevenue", "projection", "expected", "total");
+      const dailyAverage = pickNumber(inner, "dailyAverage", "avgDaily", "perDay", "dailyAvg");
+      const adjustments = pickNumber(inner, "adjustments", "adjustment", "manualAdjustments");
+
+      const calculatedAtRaw = inner.calculatedAt ?? inner.asOf ?? inner.timestamp;
+      const calculatedAt =
+        typeof calculatedAtRaw === "string" ? calculatedAtRaw : new Date().toISOString();
+
+      const month: ForecastMonth = {
         month: months[i],
-        observed: data.observed ?? 0,
-        dailyAverage: data.dailyAverage ?? 0,
-        projected: data.projected ?? 0,
-        adjustments: data.adjustments ?? 0,
-        calculatedAt: data.calculatedAt ?? new Date().toISOString(),
+        observed,
+        dailyAverage,
+        projected,
+        adjustments,
+        calculatedAt,
       };
+      if (debug) month.rawText = text;
+      return month;
     });
 
     const totals = {
