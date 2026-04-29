@@ -3,7 +3,7 @@ import { callTool, listTools } from "@/lib/poweroffice-mcp";
 
 vi.mock("@/lib/poweroffice-mcp", () => ({
   listTools: vi.fn().mockResolvedValue([
-    { name: "getForecast", description: "Get monthly forecast", inputSchema: { type: "object", properties: { month: { type: "string" } } } },
+    { name: "forecast", description: "Get monthly forecast", inputSchema: { type: "object", properties: { month: { type: "string" } } } },
   ]),
   callTool: vi.fn(),
 }));
@@ -36,7 +36,7 @@ function mockThreeMonths() {
 beforeEach(() => {
   vi.clearAllMocks();
   vi.mocked(listTools).mockResolvedValue([
-    { name: "getForecast", description: "Get monthly forecast", inputSchema: {} },
+    { name: "forecast", description: "Get monthly forecast", inputSchema: {} },
   ]);
   vi.stubEnv("POWEROFFICE_MCP_URL", "https://mcp.example.com");
   vi.stubEnv("POWEROFFICE_MCP_KEY", "test-key");
@@ -44,7 +44,7 @@ beforeEach(() => {
 });
 
 describe("GET /api/forecast", () => {
-  it("returns 200 with 3 months when getForecast is available", async () => {
+  it("returns 200 with 3 months when forecast tool is available", async () => {
     mockThreeMonths();
     const res = await GET(makeGet());
     expect(res.status).toBe(200);
@@ -53,14 +53,14 @@ describe("GET /api/forecast", () => {
     expect(json.months[0].projected).toBe(240000);
   });
 
-  it("returns 501 when getForecast tool is not found", async () => {
+  it("returns 501 when forecast tool is not found", async () => {
     vi.mocked(listTools).mockResolvedValue([
       { name: "getOtherTool", description: "Something else", inputSchema: {} },
     ]);
     const res = await GET(makeGet());
     expect(res.status).toBe(501);
     const json = await res.json();
-    expect(json.error).toContain("No getForecast tool found");
+    expect(json.error).toContain("No forecast tool found");
     expect(json.error).toContain("getOtherTool");
   });
 
