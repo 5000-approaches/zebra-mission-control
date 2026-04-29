@@ -62,7 +62,7 @@ export default function ForecastPage() {
 
   return (
     <div
-      className="flex flex-col h-[calc(100vh-0px)]"
+      className="flex flex-col h-screen"
       style={{ background: "var(--page-bg)" }}
     >
       <div className="px-6 py-5 border-b flex-shrink-0" style={{ borderColor: "var(--page-border)" }}>
