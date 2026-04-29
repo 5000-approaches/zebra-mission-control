@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import IntegrationSkillsList from "@/components/IntegrationSkillsList";
 
 type PoConfig = { url: string; key: string };
 
@@ -104,6 +105,13 @@ function PowerOfficeCard() {
                 Saved — update Vercel env vars to apply
               </p>
             )}
+          </div>
+
+          <div className="pt-2">
+            <p className="text-xs mb-2" style={{ color: "var(--page-text)", opacity: 0.65 }}>
+              Available skills
+            </p>
+            <IntegrationSkillsList filterId="poweroffice" variant="embedded" />
           </div>
         </div>
       )}

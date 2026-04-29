@@ -49,8 +49,8 @@ async function readJsonRpc(res: Response): Promise<{ result?: unknown; error?: u
   return JSON.parse(text);
 }
 
-export async function listTools(): Promise<McpTool[]> {
-  if (cachedTools) return cachedTools;
+export async function listTools(opts: { fresh?: boolean } = {}): Promise<McpTool[]> {
+  if (cachedTools && !opts.fresh) return cachedTools;
 
   const res = await fetch(mcpUrl(), {
     method: "POST",
