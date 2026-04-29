@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { callTool, listTools } from "@/lib/poweroffice-mcp";
-import type { MessageParam, TextBlockParam, ToolResultBlockParam } from "@anthropic-ai/sdk/resources/messages";
+import type { MessageParam, TextBlockParam, ToolResultBlockParam, ImageBlockParam, DocumentBlockParam } from "@anthropic-ai/sdk/resources/messages";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -21,7 +21,13 @@ When a user asks a question:
 
 Always be concise and use numbers in NOK. If data is unavailable, say so clearly.`;
 
-type ChatMessage = { role: "user" | "assistant"; content: string };
+type AttachmentParam = { data: string; mediaType: string; name: string };
+type ChatMessage = { role: "user" | "assistant"; content: string; attachments?: AttachmentParam[] };
+
+type ToolErrorRecord = { tool: string; input: unknown; error: string };
+
+export const TOOL_ERRORS_MARKER = "<<<TOOL_ERRORS>>>";
+export const TOOL_ERRORS_END = "<<<END_TOOL_ERRORS>>>";
 
 export async function POST(req: Request) {
   const apiSecret = process.env.FORECAST_API_SECRET;
@@ -53,11 +59,33 @@ export async function POST(req: Request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      const toolErrors: ToolErrorRecord[] = [];
       try {
-        let conversation: MessageParam[] = messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
+        let conversation: MessageParam[] = messages.map((m) => {
+          if (m.role === "user" && m.attachments && m.attachments.length > 0) {
+            const attBlocks: (ImageBlockParam | DocumentBlockParam)[] = m.attachments.map((att) =>
+              att.mediaType === "application/pdf"
+                ? ({
+                    type: "document",
+                    source: { type: "base64", media_type: "application/pdf", data: att.data },
+                  } as DocumentBlockParam)
+                : ({
+                    type: "image",
+                    source: {
+                      type: "base64",
+                      media_type: att.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+                      data: att.data,
+                    },
+                  } as ImageBlockParam)
+            );
+            const contentBlocks: MessageParam["content"] = [
+              ...attBlocks,
+              ...(m.content ? [{ type: "text" as const, text: m.content }] : []),
+            ];
+            return { role: "user" as const, content: contentBlocks };
+          }
+          return { role: m.role, content: m.content };
+        });
 
         // Agentic loop: continue until end_turn (no more tool calls)
         while (true) {
@@ -100,6 +128,7 @@ export async function POST(req: Request) {
             for (const block of toolUseBlocks) {
               if (block.type !== "tool_use") continue;
               let resultContent: string;
+              let isError = false;
               try {
                 const mcpResult = await callTool(
                   block.name,
@@ -108,8 +137,19 @@ export async function POST(req: Request) {
                 resultContent = mcpResult.content
                   .map((c) => c.text ?? "")
                   .join("\n");
+                if (mcpResult.isError) {
+                  isError = true;
+                }
               } catch (err) {
                 resultContent = `Tool error: ${err instanceof Error ? err.message : String(err)}`;
+                isError = true;
+              }
+              if (isError) {
+                toolErrors.push({
+                  tool: block.name,
+                  input: block.input,
+                  error: resultContent,
+                });
               }
               toolResults.push({
                 type: "tool_result",
@@ -132,8 +172,16 @@ export async function POST(req: Request) {
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
+        toolErrors.push({ tool: "(stream)", input: null, error: msg });
         controller.enqueue(encoder.encode(`\n\n[Error: ${msg}]`));
       } finally {
+        if (toolErrors.length > 0) {
+          controller.enqueue(
+            encoder.encode(
+              `\n\n${TOOL_ERRORS_MARKER}${JSON.stringify(toolErrors)}${TOOL_ERRORS_END}`
+            )
+          );
+        }
         controller.close();
       }
     },

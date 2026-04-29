@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { Home, Settings, X, LogOut, MessageSquare, BarChart2 } from "lucide-react";
+import { Home, Settings, X, LogOut, MessageSquare, BarChart2, LineChart } from "lucide-react";
 import DeployBadge from "./DeployBadge";
 
 type NavItem = {
@@ -27,6 +27,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/agent", label: "Forecast Chat", icon: MessageSquare },
       { href: "/forecast", label: "Forecast", icon: BarChart2 },
+      { href: "/billable-forecast", label: "Billable Forecast", icon: LineChart },
     ],
   },
   {
