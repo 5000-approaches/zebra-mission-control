@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { Home, FolderKanban, Activity, Settings, X, LogOut } from "lucide-react";
+import { Home, FolderKanban, Activity, Settings, X, LogOut, Sparkles } from "lucide-react";
 import DeployBadge from "./DeployBadge";
 
 type NavItem = {
@@ -27,6 +27,7 @@ const NAV_SECTIONS: NavSection[] = [
     items: [
       { href: "/projects", label: "Projects", icon: FolderKanban },
       { href: "/heartbeat", label: "Heartbeat", icon: Activity },
+      { href: "/forecast", label: "Forecast", icon: Sparkles },
     ],
   },
   {
