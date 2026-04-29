@@ -25,10 +25,10 @@ vi.mock("@anthropic-ai/sdk", () => ({
 
 import { POST } from "../route";
 
-function makeRequest(body: unknown) {
+function makeRequest(body: unknown, headers: Record<string, string> = {}) {
   return new Request("http://localhost/api/forecast-chat", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...headers },
     body: JSON.stringify(body),
   });
 }
@@ -100,5 +100,29 @@ describe("POST /api/forecast-chat", () => {
   it("returns 400 for empty messages array", async () => {
     const res = await POST(makeRequest({ messages: [] }));
     expect(res.status).toBe(400);
+  });
+
+  describe("auth guard", () => {
+    it("returns 401 when secret is set and header is missing", async () => {
+      vi.stubEnv("FORECAST_API_SECRET", "secret123");
+      const res = await POST(makeRequest({ messages: [{ role: "user", content: "hi" }] }));
+      expect(res.status).toBe(401);
+    });
+
+    it("returns 401 when secret is set and header is wrong", async () => {
+      vi.stubEnv("FORECAST_API_SECRET", "secret123");
+      const res = await POST(makeRequest({ messages: [{ role: "user", content: "hi" }] }, { "x-api-secret": "wrong" }));
+      expect(res.status).toBe(401);
+    });
+
+    it("proceeds when secret is set and header matches", async () => {
+      vi.stubEnv("FORECAST_API_SECRET", "secret123");
+      anthropicMocks.create.mockResolvedValue({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Authorized forecast." }],
+      });
+      const res = await POST(makeRequest({ messages: [{ role: "user", content: "hi" }] }, { "x-api-secret": "secret123" }));
+      expect(res.status).toBe(200);
+    });
   });
 });

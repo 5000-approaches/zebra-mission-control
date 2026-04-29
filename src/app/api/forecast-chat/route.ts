@@ -24,6 +24,14 @@ Always be concise and use numbers in NOK. If data is unavailable, say so clearly
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
 export async function POST(req: Request) {
+  const apiSecret = process.env.FORECAST_API_SECRET;
+  if (apiSecret) {
+    const provided = req.headers.get("x-api-secret");
+    if (provided !== apiSecret) {
+      return new Response("Unauthorized", { status: 401 });
+    }
+  }
+
   let messages: ChatMessage[];
   try {
     const body = await req.json();
