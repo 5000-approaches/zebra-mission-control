@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+export const dynamic = "force-dynamic";
+
+import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type ForecastRow = {
@@ -159,6 +161,14 @@ function KpiCard({ label, value, sub }: { label: string; value: string; sub?: st
 }
 
 export default function BillableForecastPage() {
+  return (
+    <Suspense>
+      <BillableForecastContent />
+    </Suspense>
+  );
+}
+
+function BillableForecastContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -253,6 +263,7 @@ export default function BillableForecastPage() {
   }, [selectedUsers, selectedProjects, selectedCustomers, selectedDepartments, selectedStatuses, dateFrom, dateTo]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchData();
   }, [fetchData]);
 
