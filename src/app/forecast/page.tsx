@@ -1,0 +1,227 @@
+"use client";
+
+import { useRef, useState, useEffect, FormEvent } from "react";
+import Markdown from "@/components/Markdown";
+
+type ToolError = { tool: string; input: unknown; error: string };
+type Message = { role: "user" | "assistant"; content: string };
+
+const TOOL_ERRORS_MARKER = "<<<TOOL_ERRORS>>>";
+const TOOL_ERRORS_END = "<<<END_TOOL_ERRORS>>>";
+
+function splitToolErrors(content: string): { text: string; errors: ToolError[] } {
+  const start = content.indexOf(TOOL_ERRORS_MARKER);
+  if (start === -1) return { text: content, errors: [] };
+  const end = content.indexOf(TOOL_ERRORS_END, start);
+  const text = content.slice(0, start).trimEnd();
+  const jsonEnd = end === -1 ? content.length : end;
+  const json = content.slice(start + TOOL_ERRORS_MARKER.length, jsonEnd);
+  try {
+    const errors = JSON.parse(json) as ToolError[];
+    return { text, errors };
+  } catch {
+    return { text, errors: [] };
+  }
+}
+
+export default function ForecastPage() {
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  async function handleSend(e?: FormEvent) {
+    e?.preventDefault();
+    const text = input.trim();
+    if (!text || loading) return;
+
+    const userMessage: Message = { role: "user", content: text };
+    const nextMessages = [...messages, userMessage];
+    setMessages(nextMessages);
+    setInput("");
+    setLoading(true);
+
+    const assistantMessage: Message = { role: "assistant", content: "" };
+    setMessages((prev) => [...prev, assistantMessage]);
+
+    try {
+      const res = await fetch("/api/forecast-chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: nextMessages }),
+      });
+
+      if (!res.ok || !res.body) {
+        const detail = (await res.text().catch(() => "")) || res.statusText || `HTTP ${res.status}`;
+        setMessages((prev) => [
+          ...prev.slice(0, -1),
+          { role: "assistant", content: `Error ${res.status}: ${detail}` },
+        ]);
+        return;
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        setMessages((prev) => {
+          const last = prev[prev.length - 1];
+          return [...prev.slice(0, -1), { ...last, content: last.content + chunk }];
+        });
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div
+      className="flex flex-col h-screen"
+      style={{ background: "var(--page-bg)" }}
+    >
+      <div className="px-6 py-5 border-b flex-shrink-0" style={{ borderColor: "var(--page-border)" }}>
+        <h1 className="text-xl font-bold" style={{ color: "var(--page-text)" }}>
+          Forecast Chat
+        </h1>
+        <p className="text-sm mt-0.5" style={{ color: "var(--page-text)", opacity: 0.55 }}>
+          Ask billing and revenue questions backed by PowerOffice data
+        </p>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-6 py-4 space-y-4">
+        {messages.length === 0 && (
+          <p className="text-sm text-center mt-12" style={{ color: "var(--page-text)", opacity: 0.4 }}>
+            Ask a question like &ldquo;What is our billable forecast for April?&rdquo;
+          </p>
+        )}
+        {messages.map((msg, i) => (
+          <div
+            key={i}
+            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
+          >
+            <div
+              data-testid={msg.role === "assistant" ? "assistant-message" : "user-message"}
+              className={`max-w-[75%] rounded-2xl px-4 py-3 text-sm ${
+                msg.role === "user" ? "whitespace-pre-wrap" : ""
+              }`}
+              style={
+                msg.role === "user"
+                  ? { background: "var(--accent-lighter)", color: "var(--accent-darker)" }
+                  : {
+                      background: "var(--page-surface)",
+                      border: "1px solid var(--page-border)",
+                      color: "var(--page-text)",
+                    }
+              }
+            >
+              {msg.role === "assistant" ? (
+                msg.content ? (
+                  (() => {
+                    const { text, errors } = splitToolErrors(msg.content);
+                    return (
+                      <>
+                        {text && <Markdown>{text}</Markdown>}
+                        {errors.length > 0 && <ToolErrorsBlock errors={errors} />}
+                      </>
+                    );
+                  })()
+                ) : loading && i === messages.length - 1 ? (
+                  "…"
+                ) : (
+                  ""
+                )
+              ) : (
+                msg.content
+              )}
+            </div>
+          </div>
+        ))}
+        <div ref={bottomRef} />
+      </div>
+
+      <form
+        onSubmit={handleSend}
+        className="flex-shrink-0 px-6 py-4 border-t flex gap-3"
+        style={{ borderColor: "var(--page-border)", background: "var(--page-bg)" }}
+      >
+        <input
+          type="text"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Ask a forecast question…"
+          disabled={loading}
+          className="flex-1 rounded-xl px-4 py-2.5 text-sm outline-none transition-colors"
+          style={{
+            background: "var(--page-surface)",
+            border: "1px solid var(--page-border)",
+            color: "var(--page-text)",
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleSend();
+            }
+          }}
+        />
+        <button
+          type="submit"
+          disabled={loading || !input.trim()}
+          className="px-4 py-2.5 rounded-xl text-sm font-medium transition-opacity disabled:opacity-40"
+          style={{ background: "var(--accent)", color: "white" }}
+        >
+          Send
+        </button>
+      </form>
+    </div>
+  );
+}
+
+function ToolErrorsBlock({ errors }: { errors: ToolError[] }) {
+  return (
+    <details
+      data-testid="tool-errors"
+      className="mt-3 rounded-lg border text-xs"
+      style={{
+        background: "#fdf2f8",
+        borderColor: "#fbcfe8",
+        color: "#9d174d",
+      }}
+    >
+      <summary className="cursor-pointer select-none px-3 py-2 font-medium">
+        {errors.length === 1
+          ? "Show technical error details"
+          : `Show technical error details (${errors.length})`}
+      </summary>
+      <div className="px-3 pb-3 space-y-3">
+        {errors.map((err, idx) => (
+          <div key={idx} className="space-y-1">
+            <p className="font-semibold">
+              Tool: <code className="font-mono">{err.tool}</code>
+            </p>
+            {err.input != null && (
+              <pre
+                className="overflow-x-auto rounded p-2 font-mono text-[11px]"
+                style={{ background: "#fce7f3" }}
+              >
+                {JSON.stringify(err.input, null, 2)}
+              </pre>
+            )}
+            <pre
+              className="overflow-x-auto rounded p-2 font-mono text-[11px] whitespace-pre-wrap"
+              style={{ background: "#fce7f3" }}
+            >
+              {err.error}
+            </pre>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
+}

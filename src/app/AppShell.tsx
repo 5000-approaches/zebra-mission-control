@@ -1,11 +1,18 @@
 "use client";
 
 import { useState } from "react";
+import { usePathname } from "next/navigation";
 import { Menu } from "lucide-react";
 import Sidebar from "@/components/Sidebar";
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const isAuth = pathname === "/auth";
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  if (isAuth) {
+    return <>{children}</>;
+  }
 
   return (
     <div className="flex min-h-screen">
