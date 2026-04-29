@@ -88,8 +88,68 @@ describe("POST /api/forecast-chat", () => {
     expect(res.status).toBe(200);
     const text = await readStream(res);
     expect(text).toContain("Projected total");
+    expect(text).not.toContain("<<<TOOL_ERRORS>>>");
     expect(callTool).toHaveBeenCalledWith("getForecast", { month: "2026-04" });
     expect(anthropicMocks.create).toHaveBeenCalledTimes(2);
+  });
+
+  it("appends a TOOL_ERRORS trailer when callTool throws", async () => {
+    const mcp = await import("@/lib/poweroffice-mcp");
+    vi.mocked(mcp.callTool).mockRejectedValueOnce(new Error("MCP exploded"));
+
+    anthropicMocks.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [
+          { type: "tool_use", id: "tu_1", name: "getForecast", input: { month: "2026-04" } },
+        ],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "Sorry, the tool failed." }],
+      });
+
+    const res = await POST(makeRequest({ messages: [{ role: "user", content: "April forecast?" }] }));
+    const text = await readStream(res);
+    const startIdx = text.indexOf("<<<TOOL_ERRORS>>>");
+    const endIdx = text.indexOf("<<<END_TOOL_ERRORS>>>");
+    expect(startIdx).toBeGreaterThan(-1);
+    expect(endIdx).toBeGreaterThan(startIdx);
+    const json = text.slice(startIdx + "<<<TOOL_ERRORS>>>".length, endIdx);
+    const parsed = JSON.parse(json);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].tool).toBe("getForecast");
+    expect(parsed[0].error).toContain("MCP exploded");
+  });
+
+  it("appends a TOOL_ERRORS trailer when MCP returns isError", async () => {
+    const mcp = await import("@/lib/poweroffice-mcp");
+    vi.mocked(mcp.callTool).mockResolvedValueOnce({
+      content: [{ type: "text", text: "No data for this period" }],
+      isError: true,
+    });
+
+    anthropicMocks.create
+      .mockResolvedValueOnce({
+        stop_reason: "tool_use",
+        content: [
+          { type: "tool_use", id: "tu_1", name: "getForecast", input: { month: "2050-01" } },
+        ],
+      })
+      .mockResolvedValueOnce({
+        stop_reason: "end_turn",
+        content: [{ type: "text", text: "No data was available." }],
+      });
+
+    const res = await POST(makeRequest({ messages: [{ role: "user", content: "Forecast?" }] }));
+    const text = await readStream(res);
+    expect(text).toContain("<<<TOOL_ERRORS>>>");
+    const json = text.slice(
+      text.indexOf("<<<TOOL_ERRORS>>>") + "<<<TOOL_ERRORS>>>".length,
+      text.indexOf("<<<END_TOOL_ERRORS>>>")
+    );
+    const parsed = JSON.parse(json);
+    expect(parsed[0].error).toContain("No data for this period");
   });
 
   it("returns 400 for missing messages", async () => {

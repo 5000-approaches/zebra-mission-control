@@ -60,7 +60,48 @@ test("assistant response renders markdown as HTML (headings, tables, bold)", asy
   const assistantMsg = page.locator('[data-testid="assistant-message"]').first();
   await expect(assistantMsg.locator("h2")).toContainText("July 2025", { timeout: 10_000 });
   await expect(assistantMsg.locator("table")).toBeAttached();
-  await expect(assistantMsg.locator("th")).toContainText("Field");
+  await expect(assistantMsg.locator("th").first()).toContainText("Field");
   await expect(assistantMsg.locator("strong").first()).toContainText("Period");
   await expect(assistantMsg.locator("blockquote")).toContainText("on track");
+});
+
+test("tool errors render as a collapsible details block", async ({ page }) => {
+  const errorPayload = [
+    {
+      tool: "getForecast",
+      input: { month: "2050-01" },
+      error: "MCP error: unable to reach upstream PowerOffice service (HTTP 503)",
+    },
+  ];
+  await page.route("/api/forecast-chat", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "text/plain; charset=utf-8",
+      body:
+        "Sorry, the forecast tool failed.\n\n<<<TOOL_ERRORS>>>" +
+        JSON.stringify(errorPayload) +
+        "<<<END_TOOL_ERRORS>>>",
+    });
+  });
+
+  await page.goto("/forecast", { waitUntil: "load" });
+  await page.waitForLoadState("networkidle");
+
+  await page.fill('input[type="text"]', "Forecast for 2050?");
+  await page.click('button[type="submit"]');
+
+  const assistantMsg = page.locator('[data-testid="assistant-message"]').first();
+  await expect(assistantMsg).toContainText("the forecast tool failed", { timeout: 10_000 });
+  // The raw marker must not leak into the rendered text.
+  await expect(assistantMsg).not.toContainText("TOOL_ERRORS");
+
+  const details = assistantMsg.locator('[data-testid="tool-errors"]');
+  await expect(details).toBeAttached();
+
+  // Collapsed by default — the error body is not rendered visibly until clicked.
+  await expect(details.locator("summary")).toContainText("Show technical error details");
+
+  await details.locator("summary").click();
+  await expect(details).toContainText("MCP error: unable to reach upstream");
+  await expect(details).toContainText("getForecast");
 });

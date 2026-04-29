@@ -23,6 +23,11 @@ Always be concise and use numbers in NOK. If data is unavailable, say so clearly
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 
+type ToolErrorRecord = { tool: string; input: unknown; error: string };
+
+export const TOOL_ERRORS_MARKER = "<<<TOOL_ERRORS>>>";
+export const TOOL_ERRORS_END = "<<<END_TOOL_ERRORS>>>";
+
 export async function POST(req: Request) {
   const apiSecret = process.env.FORECAST_API_SECRET;
   if (apiSecret) {
@@ -53,6 +58,7 @@ export async function POST(req: Request) {
   const encoder = new TextEncoder();
   const stream = new ReadableStream({
     async start(controller) {
+      const toolErrors: ToolErrorRecord[] = [];
       try {
         let conversation: MessageParam[] = messages.map((m) => ({
           role: m.role,
@@ -100,6 +106,7 @@ export async function POST(req: Request) {
             for (const block of toolUseBlocks) {
               if (block.type !== "tool_use") continue;
               let resultContent: string;
+              let isError = false;
               try {
                 const mcpResult = await callTool(
                   block.name,
@@ -108,8 +115,19 @@ export async function POST(req: Request) {
                 resultContent = mcpResult.content
                   .map((c) => c.text ?? "")
                   .join("\n");
+                if (mcpResult.isError) {
+                  isError = true;
+                }
               } catch (err) {
                 resultContent = `Tool error: ${err instanceof Error ? err.message : String(err)}`;
+                isError = true;
+              }
+              if (isError) {
+                toolErrors.push({
+                  tool: block.name,
+                  input: block.input,
+                  error: resultContent,
+                });
               }
               toolResults.push({
                 type: "tool_result",
@@ -132,8 +150,16 @@ export async function POST(req: Request) {
         }
       } catch (err) {
         const msg = err instanceof Error ? err.message : "Unknown error";
+        toolErrors.push({ tool: "(stream)", input: null, error: msg });
         controller.enqueue(encoder.encode(`\n\n[Error: ${msg}]`));
       } finally {
+        if (toolErrors.length > 0) {
+          controller.enqueue(
+            encoder.encode(
+              `\n\n${TOOL_ERRORS_MARKER}${JSON.stringify(toolErrors)}${TOOL_ERRORS_END}`
+            )
+          );
+        }
         controller.close();
       }
     },
