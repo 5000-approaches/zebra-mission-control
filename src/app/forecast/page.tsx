@@ -158,7 +158,7 @@ export default function ForecastPage() {
           Forecast
         </h1>
         <p className="text-sm" style={{ color: "var(--page-text)", opacity: 0.55 }}>
-          Deterministic revenue forecast — current month + next 2
+          Deterministic revenue forecast — 6-month window with 2 months ahead extrapolated
         </p>
       </div>
 
@@ -177,16 +177,21 @@ export default function ForecastPage() {
         </div>
       )}
 
-      {!loading && !error && data && (
-        <>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {data.months.map((m) => (
-              <MonthCard key={m.month} data={m} />
-            ))}
-          </div>
-          <ForecastChart months={data.months} />
-        </>
-      )}
+      {!loading && !error && data && (() => {
+        // 6-month window: split into 4 historical-or-current and 2 future for cards.
+        // Last 3 (current + next 2) shown as detail cards; chart shows all 6.
+        const cardMonths = data.months.slice(-3);
+        return (
+          <>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {cardMonths.map((m) => (
+                <MonthCard key={m.month} data={m} />
+              ))}
+            </div>
+            <ForecastChart months={data.months} />
+          </>
+        );
+      })()}
     </div>
   );
 }
