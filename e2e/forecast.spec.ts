@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 test("forecast agent page loads with chat input", async ({ page }) => {
   await page.goto("/agent", { waitUntil: "domcontentloaded" });
   await expect(page.locator("h1")).toContainText("Forecast Agent", { timeout: 10_000 });
-  await expect(page.locator('input[type="text"]')).toBeAttached({ timeout: 5_000 });
+  await expect(page.locator("textarea")).toBeAttached({ timeout: 5_000 });
   await expect(page.locator('button[type="submit"]')).toBeAttached({ timeout: 5_000 });
 });
 
@@ -65,7 +65,7 @@ test("submitting a question streams AI response into chat", async ({ page }) => 
   await page.goto("/agent", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
-  await page.fill('input[type="text"]', "What is our billable forecast for April?");
+  await page.fill("textarea","What is our billable forecast for April?");
   await page.click('button[type="submit"]');
 
   const assistantMsg = page.locator('[data-testid="assistant-message"]');
@@ -93,7 +93,7 @@ test("assistant response renders markdown as HTML (headings, tables, bold)", asy
   await page.goto("/agent", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
-  await page.fill('input[type="text"]', "What's the July forecast?");
+  await page.fill("textarea","What's the July forecast?");
   await page.click('button[type="submit"]');
 
   const assistantMsg = page.locator('[data-testid="assistant-message"]').first();
@@ -126,7 +126,7 @@ test("tool errors render as a collapsible details block", async ({ page }) => {
   await page.goto("/agent", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
-  await page.fill('input[type="text"]', "Forecast for 2050?");
+  await page.fill("textarea","Forecast for 2050?");
   await page.click('button[type="submit"]');
 
   const assistantMsg = page.locator('[data-testid="assistant-message"]').first();
