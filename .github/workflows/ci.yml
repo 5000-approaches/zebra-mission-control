@@ -215,10 +215,24 @@ jobs:
       - name: Install Playwright browsers
         run: npx playwright install --with-deps chromium
 
-      - name: Run Playwright e2e
+      # Auth tests need the real middleware redirect to /auth, so they must run with BYPASS_AUTH OFF
+      # (and require AUTH_SECRET so NextAuth initialises). Authenticated-page tests would be redirected
+      # away if auth weren't bypassed (no session in CI), so they need BYPASS_AUTH=true. Tests are
+      # routed via the [auth-flow] tag in their titles.
+      - name: Run Playwright e2e — auth-flow tests (no bypass)
+        env:
+          BYPASS_AUTH: ""
+          AUTH_SECRET: ci-only-dummy-secret-for-auth-redirect-tests
+        run: npx playwright test --grep '\[auth-flow\]'
+
+      - name: Stop any leftover dev server between phases
+        if: always()
+        run: pkill -f "next dev" || true
+
+      - name: Run Playwright e2e — authenticated-page tests (bypass on)
         env:
           BYPASS_AUTH: "true"
-        run: npx playwright test
+        run: npx playwright test --grep-invert '\[auth-flow\]'
 
       - name: Upload Playwright report
         if: always()

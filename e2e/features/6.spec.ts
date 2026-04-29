@@ -3,7 +3,7 @@ import { test, expect } from "@playwright/test";
 test.use({ video: "on", trace: "on" });
 
 test.describe("PR #6 — Mission Control cleanup", () => {
-  test("unauthenticated / redirects to /auth with sign-in button", async ({ page }) => {
+  test("[auth-flow] unauthenticated / redirects to /auth with sign-in button", async ({ page }) => {
     const response = await page.goto("/", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(/\/auth/, { timeout: 10_000 });
     expect(response?.status()).toBeLessThan(400);
@@ -11,7 +11,7 @@ test.describe("PR #6 — Mission Control cleanup", () => {
     await expect(btn).toBeVisible({ timeout: 10_000 });
   });
 
-  test("/forecast page exists and redirects to auth when unauthenticated", async ({ page }) => {
+  test("[auth-flow] /forecast page exists and redirects to auth when unauthenticated", async ({ page }) => {
     await page.goto("/forecast", { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(/\/auth/, { timeout: 10_000 });
   });

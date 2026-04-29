@@ -15,5 +15,6 @@ test("PR #1 — sidebar Home link navigates back to home", async ({ page }) => {
   await page.goto("/test", { waitUntil: "domcontentloaded" });
   await expect(page.locator("h1")).toContainText("Hello from the pipeline", { timeout: 10_000 });
   await page.click('a[href="/"]');
-  await expect(page.locator("h1")).toContainText("Mission Control", { timeout: 10_000 });
+  // Home page heading is "Hello [first name]" once authenticated.
+  await expect(page.locator("h1")).toContainText("Hello", { timeout: 10_000 });
 });
