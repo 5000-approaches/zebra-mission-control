@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useSession } from "next-auth/react";
 import { MessageSquare, BarChart2 } from "lucide-react";
 
-const NAV_BOXES = [
+export const NAV_BOXES = [
   { href: "/agent", label: "Forecast Chat", icon: MessageSquare, description: "Chat with the AI forecast agent" },
   { href: "/forecast", label: "Forecast", icon: BarChart2, description: "Deterministic revenue forecast" },
 ];

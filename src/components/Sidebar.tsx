@@ -17,7 +17,7 @@ type NavSection = {
   items: NavItem[];
 };
 
-const NAV_SECTIONS: NavSection[] = [
+export const NAV_SECTIONS: NavSection[] = [
   {
     heading: null,
     items: [{ href: "/", label: "Home", icon: Home }],
