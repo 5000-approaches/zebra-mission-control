@@ -36,9 +36,10 @@ export default function ForecastPage() {
       });
 
       if (!res.ok || !res.body) {
+        const detail = (await res.text().catch(() => "")) || res.statusText || `HTTP ${res.status}`;
         setMessages((prev) => [
           ...prev.slice(0, -1),
-          { role: "assistant", content: `Error: ${res.statusText}` },
+          { role: "assistant", content: `Error ${res.status}: ${detail}` },
         ]);
         return;
       }
