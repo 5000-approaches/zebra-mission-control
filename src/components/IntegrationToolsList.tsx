@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import type { SkillsApiResponse, IntegrationSkills } from "@/app/api/integrations/skills/route";
+import type { ToolsApiResponse, IntegrationTools } from "@/app/api/integrations/tools/route";
 
 type Props = {
   /** Show only this integration. If omitted, render all. */
@@ -12,18 +12,18 @@ type Props = {
   variant?: "header" | "embedded";
 };
 
-export default function IntegrationSkillsList({ filterId, variant = "header" }: Props) {
-  const [data, setData] = useState<SkillsApiResponse | null>(null);
+export default function IntegrationToolsList({ filterId, variant = "header" }: Props) {
+  const [data, setData] = useState<ToolsApiResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [open, setOpen] = useState(variant === "embedded");
 
   useEffect(() => {
     let cancelled = false;
-    fetch("/api/integrations/skills")
+    fetch("/api/integrations/tools")
       .then(async (r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
-        return r.json() as Promise<SkillsApiResponse>;
+        return r.json() as Promise<ToolsApiResponse>;
       })
       .then((d) => {
         if (!cancelled) setData(d);
@@ -56,7 +56,7 @@ export default function IntegrationSkillsList({ filterId, variant = "header" }: 
   }
 
   return (
-    <div data-testid="integration-skills-list" className="mt-2">
+    <div data-testid="integration-tools-list" className="mt-2">
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -68,7 +68,7 @@ export default function IntegrationSkillsList({ filterId, variant = "header" }: 
         }}
       >
         <span style={{ opacity: 0.75 }}>
-          {loading ? "Loading skills…" : `Available skills (${totalTools})`}
+          {loading ? "Loading tools…" : `Available tools (${totalTools})`}
         </span>
         {open ? <ChevronUp size={12} style={{ opacity: 0.5 }} /> : <ChevronDown size={12} style={{ opacity: 0.5 }} />}
       </button>
@@ -101,20 +101,20 @@ function EmbeddedView({
 }: {
   loading: boolean;
   error: string | null;
-  integrations: IntegrationSkills[];
+  integrations: IntegrationTools[];
   showLabels: boolean;
 }) {
   if (loading) {
     return (
       <p className="text-xs" style={{ color: "var(--page-text)", opacity: 0.5 }}>
-        Loading skills…
+        Loading tools…
       </p>
     );
   }
   if (error) {
     return (
       <p className="text-xs" style={{ color: "#b91c1c" }}>
-        Could not load skills: {error}
+        Could not load tools: {error}
       </p>
     );
   }
@@ -144,14 +144,14 @@ function EmbeddedView({
             </p>
           ) : integ.tools.length === 0 ? (
             <p className="text-xs" style={{ color: "var(--page-text)", opacity: 0.5 }}>
-              No skills exposed.
+              No tools exposed.
             </p>
           ) : (
             <ul className="flex flex-col gap-1">
               {integ.tools.map((t) => (
                 <li
                   key={`${integ.id}:${t.name}`}
-                  data-testid="integration-skill"
+                  data-testid="integration-tool"
                   className="text-xs flex flex-col"
                 >
                   <code

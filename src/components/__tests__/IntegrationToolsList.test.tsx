@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import type { SkillsApiResponse } from "@/app/api/integrations/skills/route";
+import type { ToolsApiResponse } from "@/app/api/integrations/tools/route";
 
 const mockSet = vi.fn();
 let stateValues: [unknown, typeof mockSet][] = [];
@@ -37,9 +37,9 @@ function flatten(node: unknown, depth = 0): string {
   return "";
 }
 
-import IntegrationSkillsList from "../IntegrationSkillsList";
+import IntegrationToolsList from "../IntegrationToolsList";
 
-const MOCK_RESPONSE: SkillsApiResponse = {
+const MOCK_RESPONSE: ToolsApiResponse = {
   integrations: [
     {
       id: "poweroffice",
@@ -67,28 +67,28 @@ beforeEach(() => {
   stateCallIdx = 0;
 });
 
-describe("IntegrationSkillsList", () => {
-  it("shows a 'Loading skills…' label while loading (header variant)", () => {
+describe("IntegrationToolsList", () => {
+  it("shows a 'Loading tools…' label while loading (header variant)", () => {
     setStates(null, true, null, false);
-    const text = flatten(IntegrationSkillsList({}));
-    expect(text).toContain("Loading skills");
+    const text = flatten(IntegrationToolsList({}));
+    expect(text).toContain("Loading tools");
   });
 
   it("renders the count of tools across all integrations on the pill", () => {
     setStates(MOCK_RESPONSE, false, null, false);
-    const text = flatten(IntegrationSkillsList({}));
-    expect(text).toContain("Available skills (2)");
+    const text = flatten(IntegrationToolsList({}));
+    expect(text).toContain("Available tools (2)");
   });
 
   it("does not render tool details when collapsed", () => {
     setStates(MOCK_RESPONSE, false, null, false);
-    const text = flatten(IntegrationSkillsList({}));
+    const text = flatten(IntegrationToolsList({}));
     expect(text).not.toContain("Build a forecast");
   });
 
   it("renders tool names and descriptions when expanded", () => {
     setStates(MOCK_RESPONSE, false, null, true);
-    const text = flatten(IntegrationSkillsList({}));
+    const text = flatten(IntegrationToolsList({}));
     expect(text).toContain("forecast");
     expect(text).toContain("Build a forecast");
     expect(text).toContain("list_invoices");
@@ -97,13 +97,13 @@ describe("IntegrationSkillsList", () => {
 
   it("shows the integration label when filterId is omitted", () => {
     setStates(MOCK_RESPONSE, false, null, true);
-    const text = flatten(IntegrationSkillsList({}));
+    const text = flatten(IntegrationToolsList({}));
     expect(text).toContain("PowerOffice");
   });
 
   it("hides the integration label when filterId narrows to one integration", () => {
     setStates(MOCK_RESPONSE, false, null, true);
-    const text = flatten(IntegrationSkillsList({ filterId: "poweroffice" }));
+    const text = flatten(IntegrationToolsList({ filterId: "poweroffice" }));
     expect(text).not.toContain("PowerOffice"); // label suppressed when filtered
     expect(text).toContain("forecast");
   });
@@ -120,21 +120,21 @@ describe("IntegrationSkillsList", () => {
       null,
       true
     );
-    const text = flatten(IntegrationSkillsList({ filterId: "poweroffice" }));
+    const text = flatten(IntegrationToolsList({ filterId: "poweroffice" }));
     expect(text).toContain("forecast");
     expect(text).not.toContain("other_tool");
   });
 
   it("renders an error message in embedded variant when fetch failed", () => {
     setStates(null, false, "Network error", false);
-    const text = flatten(IntegrationSkillsList({ variant: "embedded" }));
-    expect(text).toContain("Could not load skills");
+    const text = flatten(IntegrationToolsList({ variant: "embedded" }));
+    expect(text).toContain("Could not load tools");
     expect(text).toContain("Network error");
   });
 
   it("renders 'No integrations configured' when integrations array is empty", () => {
     setStates({ integrations: [] }, false, null, true);
-    const text = flatten(IntegrationSkillsList({}));
+    const text = flatten(IntegrationToolsList({}));
     expect(text).toContain("No integrations configured");
   });
 
@@ -149,7 +149,7 @@ describe("IntegrationSkillsList", () => {
       null,
       true
     );
-    const text = flatten(IntegrationSkillsList({}));
+    const text = flatten(IntegrationToolsList({}));
     expect(text).toContain("MCP unreachable");
   });
 });

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import IntegrationSkillsList from "@/components/IntegrationSkillsList";
+import IntegrationToolsList from "@/components/IntegrationToolsList";
 
 type PoConfig = { url: string; key: string };
 
@@ -109,9 +109,9 @@ function PowerOfficeCard() {
 
           <div className="pt-2">
             <p className="text-xs mb-2" style={{ color: "var(--page-text)", opacity: 0.65 }}>
-              Available skills
+              Available tools
             </p>
-            <IntegrationSkillsList filterId="poweroffice" variant="embedded" />
+            <IntegrationToolsList filterId="poweroffice" variant="embedded" />
           </div>
         </div>
       )}

@@ -12,7 +12,7 @@ vi.mock("@/lib/mcp-integrations", () => ({
 
 import { GET } from "../route";
 import { INTEGRATIONS } from "@/lib/mcp-integrations";
-import type { SkillsApiResponse } from "../route";
+import type { ToolsApiResponse } from "../route";
 
 const loadTools = INTEGRATIONS[0].loadTools as ReturnType<typeof vi.fn>;
 
@@ -20,7 +20,7 @@ beforeEach(() => {
   loadTools.mockReset();
 });
 
-describe("GET /api/integrations/skills", () => {
+describe("GET /api/integrations/tools", () => {
   it("returns each integration's tools", async () => {
     loadTools.mockResolvedValue([
       { name: "forecast", description: "Build a forecast", inputSchema: {} },
@@ -29,7 +29,7 @@ describe("GET /api/integrations/skills", () => {
 
     const res = await GET();
     expect(res.status).toBe(200);
-    const body = (await res.json()) as SkillsApiResponse;
+    const body = (await res.json()) as ToolsApiResponse;
 
     expect(body.integrations).toHaveLength(1);
     expect(body.integrations[0]).toMatchObject({
@@ -48,7 +48,7 @@ describe("GET /api/integrations/skills", () => {
 
     const res = await GET();
     expect(res.status).toBe(200);
-    const body = (await res.json()) as SkillsApiResponse;
+    const body = (await res.json()) as ToolsApiResponse;
 
     expect(body.integrations[0].tools).toEqual([]);
     expect(body.integrations[0].error).toBe("connection refused");
@@ -60,7 +60,7 @@ describe("GET /api/integrations/skills", () => {
     ]);
 
     const res = await GET();
-    const body = (await res.json()) as SkillsApiResponse;
+    const body = (await res.json()) as ToolsApiResponse;
     expect(body.integrations[0].tools[0]).toEqual({ name: "forecast", description: "x" });
     expect((body.integrations[0].tools[0] as Record<string, unknown>).inputSchema).toBeUndefined();
   });
