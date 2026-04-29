@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { callTool, listTools } from "@/lib/poweroffice-mcp";
-import type { MessageParam, TextBlockParam, ToolResultBlockParam } from "@anthropic-ai/sdk/resources/messages";
+import type { MessageParam, TextBlockParam, ToolResultBlockParam, ImageBlockParam, DocumentBlockParam } from "@anthropic-ai/sdk/resources/messages";
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -21,7 +21,8 @@ When a user asks a question:
 
 Always be concise and use numbers in NOK. If data is unavailable, say so clearly.`;
 
-type ChatMessage = { role: "user" | "assistant"; content: string };
+type AttachmentParam = { data: string; mediaType: string; name: string };
+type ChatMessage = { role: "user" | "assistant"; content: string; attachments?: AttachmentParam[] };
 
 type ToolErrorRecord = { tool: string; input: unknown; error: string };
 
@@ -60,10 +61,31 @@ export async function POST(req: Request) {
     async start(controller) {
       const toolErrors: ToolErrorRecord[] = [];
       try {
-        let conversation: MessageParam[] = messages.map((m) => ({
-          role: m.role,
-          content: m.content,
-        }));
+        let conversation: MessageParam[] = messages.map((m) => {
+          if (m.role === "user" && m.attachments && m.attachments.length > 0) {
+            const attBlocks: (ImageBlockParam | DocumentBlockParam)[] = m.attachments.map((att) =>
+              att.mediaType === "application/pdf"
+                ? ({
+                    type: "document",
+                    source: { type: "base64", media_type: "application/pdf", data: att.data },
+                  } as DocumentBlockParam)
+                : ({
+                    type: "image",
+                    source: {
+                      type: "base64",
+                      media_type: att.mediaType as "image/jpeg" | "image/png" | "image/gif" | "image/webp",
+                      data: att.data,
+                    },
+                  } as ImageBlockParam)
+            );
+            const contentBlocks: MessageParam["content"] = [
+              ...attBlocks,
+              ...(m.content ? [{ type: "text" as const, text: m.content }] : []),
+            ];
+            return { role: "user" as const, content: contentBlocks };
+          }
+          return { role: m.role, content: m.content };
+        });
 
         // Agentic loop: continue until end_turn (no more tool calls)
         while (true) {
