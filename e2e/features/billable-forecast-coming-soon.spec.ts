@@ -9,5 +9,5 @@ test("billable-forecast — shows Coming soon text", async ({ page }) => {
 
 test("billable-forecast — sidebar shows Soon badge on the entry", async ({ page }) => {
   await page.goto("/billable-forecast", { waitUntil: "domcontentloaded" });
-  await expect(page.getByText("Soon")).toBeVisible({ timeout: 10_000 });
+  await expect(page.getByText("Soon", { exact: true })).toBeVisible({ timeout: 10_000 });
 });
