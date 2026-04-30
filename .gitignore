@@ -45,3 +45,4 @@ next-env.d.ts
 
 # e2e screenshots (artifact-only, not tracked)
 /e2e/screenshots/
+.env*.local
