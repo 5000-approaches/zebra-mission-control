@@ -38,7 +38,7 @@ export const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-function NavLink({
+export function NavLink({
   item,
   active,
   onClose,
