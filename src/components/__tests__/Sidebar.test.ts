@@ -34,4 +34,12 @@ describe("NAV_SECTIONS structure", () => {
       }
     }
   });
+
+  it("billable-forecast item is disabled with Soon badge", () => {
+    const ws = NAV_SECTIONS.find((s) => s.heading === "Workspace");
+    const item = ws!.items.find((i) => i.href === "/billable-forecast");
+    expect(item).toBeDefined();
+    expect(item!.disabled).toBe(true);
+    expect(item!.badge).toBe("Soon");
+  });
 });
