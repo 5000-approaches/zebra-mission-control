@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { callTool, listTools } from "@/lib/poweroffice-mcp";
 
 vi.mock("@/lib/poweroffice-mcp", () => ({
@@ -46,6 +46,10 @@ function makeGet(headers: Record<string, string> = {}, query = "") {
 }
 
 beforeEach(() => {
+  // Pin "today" so month-window assertions (Jan past, Apr current, May/Jun future)
+  // don't break when CI runs near a month boundary.
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-04-15T12:00:00Z"));
   vi.clearAllMocks();
   vi.mocked(listTools).mockResolvedValue([
     { name: "forecast", description: "forecast", inputSchema: {} },
@@ -53,6 +57,10 @@ beforeEach(() => {
   vi.stubEnv("POWEROFFICE_MCP_URL", "https://mcp.example.com");
   vi.stubEnv("POWEROFFICE_MCP_KEY", "test-key");
   vi.stubEnv("FORECAST_API_SECRET", "");
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("GET /api/forecast", () => {
