@@ -19,9 +19,9 @@ export default defineConfig({
     },
   ],
   // CI manages prebuilt `next start` servers itself (see .github/workflows/ci.yml).
-  // Local dev keeps the auto-spawned dev server.
+  // Local: uses prebuilt server too — requires `npm run build` first (Coder step 2).
   webServer: (process.env.CI || process.env.PLAYWRIGHT_BASE_URL) ? undefined : {
-    command: "npm run dev",
+    command: "npm run start",
     url: "http://localhost:3000",
     reuseExistingServer: true,
     timeout: 60_000,
