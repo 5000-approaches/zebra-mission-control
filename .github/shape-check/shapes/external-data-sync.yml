@@ -1,0 +1,17 @@
+---
+name: external-data-sync
+description: Pull data from an external source and upsert into local store
+keywords: [sync, import, pull, fetch, upsert, external]
+required:
+  - id: source-fetch
+    description: Fetch call to the external {name} source
+    check: regex
+    pattern: '(fetch|axios|got|request)\s*\([^\n]*{name}'
+  - id: upsert-write
+    description: Upsert / insert into local store
+    check: regex
+    pattern: '(upsert|onConflict|insert|merge)'
+  - id: last-sync-tracker
+    description: Persisted last-sync timestamp / cursor
+    check: regex
+    pattern: '(last[_-]?sync|syncedAt|lastSyncedAt|cursor)'

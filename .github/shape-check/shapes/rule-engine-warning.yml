@@ -1,0 +1,17 @@
+---
+name: rule-engine-warning
+description: Rule {name} that evaluates state and warns in the UI
+keywords: [rule, warning, banner, alert, check, validation, lint]
+required:
+  - id: rule-definition
+    description: Rule file or rule object for {name}
+    check: regex
+    pattern: '(rule\s*:|rules\s*[:=]|id\s*:\s*[''"]{name}[''"])'
+  - id: evaluator
+    description: Evaluator wired up to inputs
+    check: regex
+    pattern: '(evaluate|runRules|checkRules|applyRules)'
+  - id: ui-surface
+    description: Banner / warning / chip surfaced in UI
+    check: regex
+    pattern: '(Warning|Banner|Alert|<\w+\s+[^>]*warning|severity\s*:)'

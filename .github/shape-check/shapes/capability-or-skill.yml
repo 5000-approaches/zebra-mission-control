@@ -1,0 +1,17 @@
+---
+name: capability-or-skill
+description: Add a capability / skill named {name} usable by an agent
+keywords: [capability, skill, tool, function, ability]
+required:
+  - id: skill-file
+    description: Skill / capability definition file
+    check: file-exists
+    pattern: '**/{name}*'
+  - id: registration
+    description: Registration in a capability / skill registry
+    check: regex
+    pattern: '(register|capabilities|skills|tools)\b[^\n]*{name}'
+  - id: surface
+    description: Surfaced in agent definition or UI
+    check: regex
+    pattern: '{name}'

@@ -1,0 +1,17 @@
+---
+name: email-tracking
+description: Track opens / clicks for the {name} email
+keywords: [tracking, pixel, open, click, attribution, email]
+required:
+  - id: tracking-endpoint
+    description: Endpoint that records an open or click
+    check: regex
+    pattern: '/(track|open|click|t/|o/)'
+  - id: store-hit
+    description: Persist the hit in a store
+    check: regex
+    pattern: '(insert|create|upsert|increment|trackEvent)'
+  - id: attribution
+    description: Attribute the hit back to the message / user
+    check: regex
+    pattern: '(messageId|emailId|recipientId|userId)'

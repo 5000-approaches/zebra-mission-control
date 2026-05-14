@@ -1,0 +1,17 @@
+---
+name: transactional-email-send
+description: Send a transactional email named {name}
+keywords: [email, send, transactional, notification, resend, postmark, sendgrid]
+required:
+  - id: template
+    description: Email template file or inline HTML/MJML for {name}
+    check: regex
+    pattern: '(subject\s*:|html\s*:|<mjml|<html|template\s*:)'
+  - id: send-call
+    description: Call into the email provider SDK
+    check: regex
+    pattern: '(resend|sendMail|sendgrid|postmark|mailgun|emails?\.send)'
+  - id: recipient-logic
+    description: Recipient lookup / addressing
+    check: regex
+    pattern: '(to\s*:|recipient|userEmail|email\s*:)'

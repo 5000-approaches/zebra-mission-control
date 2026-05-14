@@ -1,0 +1,17 @@
+---
+name: inbound-webhook-receiver
+description: Endpoint that receives webhooks from {name}
+keywords: [webhook, inbound, receiver, callback, signature]
+required:
+  - id: endpoint
+    description: Route at /webhook/{name} or /webhooks/{name}
+    check: regex
+    pattern: '/webhooks?/{name}'
+  - id: signature-verify
+    description: Signature / HMAC / secret verification
+    check: regex
+    pattern: '(verify|hmac|crypto\.createHmac|signature|secret)'
+  - id: payload-handler
+    description: Dispatch on event type / payload action
+    check: regex
+    pattern: '(event\.type|payload\.type|switch\s*\(|action\s*===)'

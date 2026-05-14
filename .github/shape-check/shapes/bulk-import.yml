@@ -1,0 +1,17 @@
+---
+name: bulk-import
+description: Bulk import of {name} from a file or paste
+keywords: [bulk, import, upload, csv, batch, paste]
+required:
+  - id: upload-route
+    description: File-upload / paste-input endpoint or handler
+    check: regex
+    pattern: '(formData|multipart|csv|<input[^\n]*file)'
+  - id: row-parser
+    description: Per-row parser that splits / maps the input
+    check: regex
+    pattern: '(split\s*\(\s*[''"][,\\n;]|parse|map\s*\(|forEach\s*\()'
+  - id: batch-insert
+    description: Batch insert / upsert / createMany
+    check: regex
+    pattern: '(createMany|insertMany|bulkInsert|upsert)'

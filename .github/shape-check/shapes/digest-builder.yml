@@ -1,0 +1,17 @@
+---
+name: digest-builder
+description: Build a periodic digest named {name}
+keywords: [digest, summary, weekly, daily, roundup, recap]
+required:
+  - id: source-fetch
+    description: Fetch source rows for the digest window
+    check: regex
+    pattern: '(since|fromDate|sinceDate|window|select|query)'
+  - id: format-payload
+    description: Format the digest body (markdown / html / blocks)
+    check: regex
+    pattern: '(markdown|html|blocks|sections|join\s*\()'
+  - id: delivery
+    description: Deliver the digest (email / Slack / push)
+    check: regex
+    pattern: '(send|deliver|post|webhook|publish)'

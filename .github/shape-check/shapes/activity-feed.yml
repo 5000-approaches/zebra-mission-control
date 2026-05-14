@@ -1,0 +1,17 @@
+---
+name: activity-feed
+description: Append-only activity feed for {name}
+keywords: [activity, feed, timeline, events, log]
+required:
+  - id: event-store
+    description: Events / activities table or store
+    check: regex
+    pattern: '(events|activities|activity_log|event_log)\s*[:=]'
+  - id: append-on-action
+    description: At least one action appends to the feed
+    check: regex
+    pattern: '(logActivity|recordEvent|emitEvent|events?\.(insert|create))'
+  - id: feed-endpoint
+    description: Endpoint that returns the feed
+    check: regex
+    pattern: '/(activity|feed|events|timeline)'

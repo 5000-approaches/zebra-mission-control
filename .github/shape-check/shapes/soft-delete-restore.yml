@@ -1,0 +1,17 @@
+---
+name: soft-delete-restore
+description: Soft-delete + restore on a {name} resource
+keywords: [soft-delete, restore, archive, trash, deletedAt]
+required:
+  - id: deleted-at-field
+    description: deletedAt / archivedAt field on the model
+    check: regex
+    pattern: '(deletedAt|archivedAt|deleted_at|archived_at)'
+  - id: delete-sets-timestamp
+    description: Delete handler writes the timestamp rather than dropping the row
+    check: regex
+    pattern: '(deletedAt|archivedAt|deleted_at)\s*[:=]\s*(new\s+Date|now\(|NOW\()'
+  - id: restore-endpoint
+    description: Restore endpoint or action
+    check: regex
+    pattern: '(restore|undelete|unarchive)'

@@ -1,0 +1,17 @@
+---
+name: hierarchical-resource
+description: "{name} resource with parent / child tree structure"
+keywords: [hierarchy, tree, parent, child, nested, breadcrumb]
+required:
+  - id: parent-id-field
+    description: parent_id / parentId field
+    check: regex
+    pattern: '(parentId|parent_id|parentID)'
+  - id: tree-query
+    description: Tree / recursive query that walks the hierarchy
+    check: regex
+    pattern: '(recursive|WITH RECURSIVE|buildTree|walk|children|descendants)'
+  - id: breadcrumb-ui
+    description: Breadcrumb / ancestor path UI
+    check: regex
+    pattern: '(Breadcrumb|breadcrumbs|ancestors|path\s*:)'
