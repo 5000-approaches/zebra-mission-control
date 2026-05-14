@@ -1,0 +1,17 @@
+---
+name: detail-page-with-tabs
+description: Detail page for one resource with multiple tabbed sections
+keywords: [detail, tabs, single, view, profile]
+required:
+  - id: detail-route
+    description: Page route file for /{name}/[id]
+    check: file-exists
+    pattern: '**/{name}/[[]id[]]/page.*'
+  - id: tab-definitions
+    description: Tabs definition (Tabs/TabList/value+onChange)
+    check: regex
+    pattern: '(Tabs|TabsList|tabValue|activeTab|defaultValue=)'
+  - id: default-tab
+    description: A default tab selection
+    check: regex
+    pattern: '(defaultTab|defaultValue|initialTab)'

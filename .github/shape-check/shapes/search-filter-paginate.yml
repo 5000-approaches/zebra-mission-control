@@ -1,0 +1,17 @@
+---
+name: search-filter-paginate
+description: Search + filter + paginate over a collection
+keywords: [search, filter, paginate, pagination, page, query]
+required:
+  - id: search-input
+    description: Search input bound to a query param or state
+    check: regex
+    pattern: '(SearchInput|<input[^\n]*search|searchQuery|q=)'
+  - id: filter-param
+    description: At least one filter param read on the server or client
+    check: regex
+    pattern: '(filter|where|status=|type=|category=)'
+  - id: pagination
+    description: Page-size / cursor / offset pagination
+    check: regex
+    pattern: '(pageSize|page\s*=|cursor|offset|limit\s*[:=])'

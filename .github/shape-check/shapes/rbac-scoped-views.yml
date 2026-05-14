@@ -1,0 +1,17 @@
+---
+name: rbac-scoped-views
+description: Role-based scoping so users only see their {name}
+keywords: [rbac, roles, scope, permissions, acl, ownership]
+required:
+  - id: role-check
+    description: Role / permission check at the boundary
+    check: regex
+    pattern: '(requireRole|hasPermission|checkRole|isAdmin|role\s*===)'
+  - id: scoped-query
+    description: Query scoped to current user / org
+    check: regex
+    pattern: '(where\s*[:=][^\n]*(userId|orgId|tenantId|ownerId))'
+  - id: denied-response
+    description: 403 / redirect / forbidden on denial
+    check: regex
+    pattern: '(403|Forbidden|Unauthorized|redirect\s*\(\s*[''"]/login)'

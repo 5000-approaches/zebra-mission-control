@@ -1,0 +1,71 @@
+name: shape-check
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  shape-check:
+    runs-on: ubuntu-latest
+    if: ${{ github.event.pull_request.base.ref == 'dev' || github.event.pull_request.base.ref == 'main' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install PyYAML
+        run: pip install --quiet pyyaml
+
+      - name: Capture PR body + labels + diff
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p .shape-check-run
+          printf '%s' "$PR_BODY" > .shape-check-run/body.txt
+          gh pr view "$PR_NUMBER" --json labels --jq '.labels[].name' > .shape-check-run/labels.txt
+          gh pr diff "$PR_NUMBER" > .shape-check-run/pr.diff
+
+      - name: Run shape-check engine
+        id: engine
+        run: |
+          set +e
+          python3 .github/shape-check/check-engine.py \
+            --body .shape-check-run/body.txt \
+            --diff .shape-check-run/pr.diff \
+            --shapes-dir .github/shape-check/shapes \
+            --label-list .shape-check-run/labels.txt \
+            > .shape-check-run/result.json
+          RC=$?
+          set -e
+          python3 -c "import json; print(json.load(open('.shape-check-run/result.json'))['comment'])" > .shape-check-run/comment.md
+          DECISION=$(python3 -c "import json; print(json.load(open('.shape-check-run/result.json'))['decision'])")
+          echo "decision=$DECISION" >> "$GITHUB_OUTPUT"
+          echo "rc=$RC" >> "$GITHUB_OUTPUT"
+
+      - name: Post / refresh PR comment
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.engine.outputs.decision }}" = "skip-label" ]; then
+            exit 0
+          fi
+          MARKER="<!-- shape-check-comment -->"
+          BODY="$MARKER"$'\n'"$(cat .shape-check-run/comment.md)"
+          EXISTING_ID=$(gh api "repos/${{ github.repository }}/issues/$PR_NUMBER/comments" \
+            --jq ".[] | select(.body | startswith(\"$MARKER\")) | .id" | head -n1)
+          if [ -n "$EXISTING_ID" ]; then
+            gh api -X PATCH "repos/${{ github.repository }}/issues/comments/$EXISTING_ID" \
+              -f body="$BODY" >/dev/null
+          else
+            gh pr comment "$PR_NUMBER" --body "$BODY" >/dev/null
+          fi
+
+      - name: Fail if missing items
+        run: exit ${{ steps.engine.outputs.rc }}

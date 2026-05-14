@@ -1,0 +1,17 @@
+---
+name: versioning-history
+description: Keep version history for {name} with a history view
+keywords: [versioning, history, audit, snapshot, revision, diff]
+required:
+  - id: version-store
+    description: Version / snapshot table or column
+    check: regex
+    pattern: '(version|versions|snapshot|revision|history)\s*[:=]'
+  - id: history-endpoint
+    description: Endpoint / query that lists history for one record
+    check: regex
+    pattern: '(history|versions|revisions)\s*\(|GET\s+/[\w/]*history'
+  - id: diff-view
+    description: UI / function that diffs two versions
+    check: regex
+    pattern: '(diff|compare|<Diff|computeDiff)'

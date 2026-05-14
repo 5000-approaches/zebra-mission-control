@@ -1,0 +1,17 @@
+---
+name: agent-approval-flow
+description: Agent asks for human approval before taking action {name}
+keywords: [approval, hitl, human-in-the-loop, confirm, review]
+required:
+  - id: request-route
+    description: Route or function that creates an approval request
+    check: regex
+    pattern: '(requestApproval|approval[_-]?request|pendingApproval|status\s*=\s*[''"]pending[''"])'
+  - id: approve-or-reject-route
+    description: Route or handler for approve / reject decisions
+    check: regex
+    pattern: '(approve|reject|decision\s*=|status\s*=\s*[''"](approved|rejected)[''"])'
+  - id: audit-log
+    description: Audit log / history entry of the decision
+    check: regex
+    pattern: '(audit|history|log\s*\.|approvedBy|decidedAt)'

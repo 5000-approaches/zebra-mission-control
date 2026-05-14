@@ -1,0 +1,21 @@
+---
+name: oauth-integration
+description: OAuth 2.0 integration with an external provider
+keywords: [oauth, auth, login, sso, token, provider]
+required:
+  - id: auth-route
+    description: Redirect route to provider authorize URL
+    check: regex
+    pattern: '(authorize|/auth/{name}|oauth/{name}|client_id)'
+  - id: callback-route
+    description: Callback route that handles the code exchange
+    check: regex
+    pattern: '(callback|/auth/{name}/callback|code\s*=)'
+  - id: token-exchange
+    description: Code-for-token exchange call
+    check: regex
+    pattern: '(token|access_token|grant_type)'
+  - id: token-store
+    description: Stores or persists the token (db / kv / cookie)
+    check: regex
+    pattern: '(saveToken|setToken|tokens?\.(set|insert|upsert)|cookies?\.set)'
