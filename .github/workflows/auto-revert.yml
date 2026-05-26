@@ -26,16 +26,14 @@ jobs:
           echo "short_sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
 
           COMMIT_INFO=$(gh api repos/${{ github.repository }}/commits/$SHA)
-          AUTHOR_EMAIL=$(echo "$COMMIT_INFO" | jq -r '.commit.author.email')
           COMMIT_MSG=$(echo "$COMMIT_INFO" | jq -r '.commit.message | split("\n")[0]')
-          echo "author_email=$AUTHOR_EMAIL" >> "$GITHUB_OUTPUT"
           echo "commit_msg=$COMMIT_MSG" >> "$GITHUB_OUTPUT"
 
-          if [ "$AUTHOR_EMAIL" = "rune@5000approaches.io" ] || [ "$AUTHOR_EMAIL" = "rune@zebraconsulting.no" ]; then
-            echo "Skipping - Rune-authored commit"
-            echo "should_revert=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
+          # No author exemption - a red commit on dev is reverted no matter who merged it.
+          # 2026-05-25: a Rune-merged PR (#284) broke e2e; the old author exemption made
+          # auto-revert skip it, so dev sat red for a day and poisoned every branch cut after.
+          # The loop guard below (skip commits whose message starts with Revert) still
+          # prevents runaway reverts.
 
           if echo "$COMMIT_MSG" | grep -q "^Revert"; then
             echo "Skipping - commit is already a revert (loop guard)"
