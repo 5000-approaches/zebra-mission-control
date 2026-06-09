@@ -21,6 +21,7 @@ vi.mock("lucide-react", () => ({
   MessageSquare: () => null,
   BarChart2: () => null,
   LineChart: () => null,
+  Folder: () => null,
 }));
 
 function flatten(node: unknown, depth = 0): string {
@@ -45,8 +46,8 @@ function flatten(node: unknown, depth = 0): string {
 }
 
 describe("NAV_SECTIONS structure", () => {
-  it("has three sections", () => {
-    expect(NAV_SECTIONS).toHaveLength(3);
+  it("has four sections", () => {
+    expect(NAV_SECTIONS).toHaveLength(4);
   });
 
   it("first section has no heading and contains Home", () => {
