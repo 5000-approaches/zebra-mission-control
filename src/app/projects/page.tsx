@@ -25,8 +25,11 @@ function formatBudget(budget: number): string {
 }
 
 export default async function ProjectsPage() {
-  const session = await auth()
-  if (!session?.user?.email) redirect('/auth')
+  // BYPASS_AUTH=true skips auth in CI/e2e/preview environments where no session is available (same switch as src/middleware.ts)
+  if (process.env.BYPASS_AUTH !== 'true') {
+    const session = await auth()
+    if (!session?.user?.email) redirect('/auth')
+  }
 
   let handoffs: Awaited<ReturnType<typeof listHandoffs>> = []
   let dbError: string | null = null
