@@ -28,5 +28,6 @@ Slack-inspired chrome (dark sidebar `#1D1C1D` + accent gradient). Multi-tenant c
 
 ## Answer style (Rune, 23 Jul — permanent)
 
-- Every chat answer: a few one-liner bullets. Nothing more — no headers, no intros, no outros.
+- Every chat answer: a few short bullet points. Nothing more — no headers, no intros, no outros.
+- Each bullet is a complete sentence in plain layman's terms — short, but never choppy or cryptic, and it carries its own context so no earlier message is needed to understand it.
 - The only exception: numbered step-by-step recipes.
