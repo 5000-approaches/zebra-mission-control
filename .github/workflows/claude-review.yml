@@ -1,0 +1,113 @@
+name: Rig Code Review
+
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+  id-token: write
+
+jobs:
+  code-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Anything else may have armed auto-merge before this review ran - a
+      # session following an old instruction, a person, a routine. That is how
+      # PR #90 merged 25 seconds BEFORE its review posted (28 Jul). Clear it
+      # here. continue-on-error, because this step failing must never skip the
+      # review itself - the review is the only gate in the pipeline, and a
+      # skipped review that reports itself as "not clean" is a lie about the
+      # code (both caught in review, PR #91). The last step re-checks anyway.
+      - name: Hold the merge until this review has spoken
+        id: hold
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.RIG_PR_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set +e
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "RIG_PR_TOKEN not available - cannot hold the merge for this review"; exit 1; fi
+          STATE=$(gh pr view "$PR" --repo "$REPO" --json autoMergeRequest --jq 'if .autoMergeRequest == null then "off" else "on" end')
+          if [ $? -ne 0 ] || [ -z "$STATE" ]; then
+            echo "could not read whether auto-merge is armed - not going to claim it is cleared"; exit 1; fi
+          if [ "$STATE" = "off" ]; then echo "auto-merge was not armed - nothing to clear"; exit 0; fi
+          echo "auto-merge was already armed before this review - clearing it"
+          gh pr merge "$PR" --repo "$REPO" --disable-auto
+          if [ $? -ne 0 ]; then
+            echo "COULD NOT CLEAR AUTO-MERGE - this PR may merge before its review finishes"; exit 1; fi
+          AFTER=$(gh pr view "$PR" --repo "$REPO" --json autoMergeRequest --jq 'if .autoMergeRequest == null then "off" else "on" end')
+          if [ "$AFTER" != "off" ]; then
+            echo "auto-merge is STILL armed after trying to clear it"; exit 1; fi
+          echo "auto-merge cleared - only a clean review can arm it again"
+
+      - uses: anthropics/claude-code-action@v1
+        id: review
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          show_full_output: true
+          prompt: |
+            You are the AI Rig's code reviewer for pull request #${{ github.event.pull_request.number }} in ${{ github.repository }}. Nobody else reviews this code before it merges, so this review is the only gate.
+
+            1. Read the whole change: gh pr diff ${{ github.event.pull_request.number }}
+            2. Read the PR body, and the issue it closes if the body says "Closes #N".
+            3. Hunt REAL defects only: logic errors, a test that cannot fail or that was weakened, missing test coverage for the new behaviour, security problems (hardcoded secrets, a new API route with no auth check, user input reaching a query unvalidated), and scope creep - code the linked issue never asked for. Ignore style, naming and taste.
+            4. Post exactly ONE comment on the pull request using gh pr comment. Its first line must be "### Code review". Then either the single line "No blocking defects found." or a numbered list where every finding names the file and says in plain words what is wrong and why it matters. Write it for a smart non-developer. Nothing else in the comment.
+            5. Write your verdict into the file review-verdict.txt in the workspace root: the single word CLEAN if you found no blocking defect, or the single word BLOCKED if you did. Nothing else in that file.
+
+            Never approve, never merge, never push, and never edit any file except review-verdict.txt.
+          claude_args: >-
+            --allowedTools "Read,Grep,Glob,Write,Bash(git diff:*),Bash(git log:*),Bash(git show:*),Bash(gh pr view:*),Bash(gh pr diff:*),Bash(gh pr comment:*),Bash(gh issue view:*)"
+
+      - name: Arm or block the merge on this review's verdict
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.RIG_PR_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          HOLD: ${{ steps.hold.outcome }}
+          REVIEW: ${{ steps.review.outcome }}
+        run: |
+          set +e
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "RIG_PR_TOKEN not available - cannot decide this PR's merge"; exit 1; fi
+          VERDICT=$(tr -d '[:space:]' < review-verdict.txt 2>/dev/null)
+          if [ "${VERDICT:-}" = "CLEAN" ]; then
+            gh pr merge "$PR" --repo "$REPO" --squash --auto
+            if [ $? -ne 0 ]; then echo "the review was clean but auto-merge could not be armed"; exit 1; fi
+            echo "review clean - auto-merge armed for #$PR"
+            exit 0
+          fi
+          # Not clean, or no review at all. Make sure nothing is armed - and
+          # CHECK that it really is not, the same way the hold step does; saying
+          # "nothing can merge" without looking is the false confidence this
+          # whole job exists to remove (caught in review, PR #91).
+          gh pr merge "$PR" --repo "$REPO" --disable-auto
+          STILL=$(gh pr view "$PR" --repo "$REPO" --json autoMergeRequest --jq 'if .autoMergeRequest == null then "off" else "on" end')
+          if [ $? -ne 0 ] || [ -z "$STILL" ] || [ "$STILL" != "off" ]; then
+            echo "AUTO-MERGE MAY STILL BE ARMED - this PR could merge without a clean review"
+            gh pr comment "$PR" --repo "$REPO" --body "**Warning — switch auto-merge off by hand on this page.** This pull request has not been cleared by a review, and the job could not confirm that auto-merge is off. It may still merge on its own when the other checks finish."
+            exit 1
+          fi
+          # Then say WHICH of the two it was: telling Rune "the review found
+          # problems" when the review never ran is a lie about his code.
+          if [ "${VERDICT:-}" = "BLOCKED" ]; then
+            echo "review found defects - auto-merge deliberately not armed"
+            gh pr comment "$PR" --repo "$REPO" --body "Auto-merge is not armed: the code review above found something. Fix what it names and push again - the review re-runs on every push and arms auto-merge itself once it is clean."
+          else
+            echo "no verdict file - the review did not run (hold=${HOLD}, review=${REVIEW})"
+            gh pr comment "$PR" --repo "$REPO" --body "Auto-merge is not armed, and **the code review did not run at all** - so nothing has read this change yet. This is not a verdict on the code. The hold step finished as \`${HOLD}\` and the review step as \`${REVIEW}\`; the job log says why. Push again to re-run it."
+          fi
