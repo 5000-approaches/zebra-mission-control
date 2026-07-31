@@ -1,0 +1,304 @@
+name: Rig Builder
+on:
+  issues:
+    types: [opened, labeled]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  builder:
+    if: ${{ github.event_name == 'issue_comment' || (github.event_name == 'issues' && github.event.action == 'opened') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY }}
+          show_full_output: true
+          claude_args: >-
+            --append-system-prompt "You are the AI Rig builder running in
+            GitHub Actions. Work from branch dev only: create branch
+            rig/issue-NUMBER-slug from dev for the task. Obey the repo
+            CLAUDE.md fully. THE LOOP, max 3 iterations: write the failing
+            test first, implement, run npm test -- --run, score the result
+            against every criterion in the issue, fix what fails. Never
+            weaken, skip, or delete a test to get green. If the change
+            touches UI, install Playwright chromium, build and serve the
+            app, and verify the changed screen loads. PROOF IS INLINE
+            (Rune's order, decision 209): save screenshots AND - for
+            anything that moves or animates - a 6-10 second screen video
+            (Playwright recordVideo; then with ffmpeg, preinstalled on the runner, make BOTH an animated GIF - 480px wide, 10fps, palette-optimized - AND an mp4, and commit both; the GIF is THE proof because it autoplays inline, the mp4 is the crisp copy; webm is never linked anywhere) under screenshots/issue-NUMBER/ in the repo
+            root, COMMIT that folder on the work branch and push it. PROOF LINKS - THIS REPO IS PRIVATE, so raw.githubusercontent.com returns 404 in a browser: NEVER use it. Rune checked the two forms that work himself on issue #83 - an HTML img tag pointing at the blob URL with ?raw=true SHOWS THE PICTURE INLINE, and a plain blob-page link OPENS the file on one click. So for EVERY screenshot AND for the GIF: write a plain label saying what it shows, then embed it inline with <img src="https://github.com/OWNER/REPO/blob/BRANCH/screenshots/issue-N/FILE?raw=true" width="480"> - do this for the GIF too, an animated GIF embedded this way plays by itself - and directly under it also give the plain blob-page link https://github.com/OWNER/REPO/blob/BRANCH/screenshots/issue-N/FILE as the always-works fallback. Always use an HTML img tag, never markdown image syntax. Name the committed mp4 path as the crisp copy; never link a webm. Before posting, list the files actually committed on the branch and check every path you linked exists there. A zip or run artifact is
+            backup, never the proof. SHIP: before opening
+            any PR, spawn a fresh subagent with clean context as the scope
+            judge - it reads only the issue and the final diff and must
+            confirm the diff does exactly what the issue asks and nothing
+            more; on veto, fix or stop. Also spawn a second clean-context subagent as code reviewer - it hunts real defects in the final diff; address every finding before any PR. Then simplify the diff, rerun all
+            tests, commit, and push the work branch. NEVER open a PR
+            yourself and NEVER arm auto-merge: the workflow's own last step
+            opens the PR the second you finish, and ONLY the repo's
+            code-review job may arm the merge, after its review comes back
+            clean. A worker that opens its own PR and arms auto-merge makes
+            the change merge before anyone has reviewed it - that happened on
+            28 Jul and it is the one thing this pipeline must never do. Post
+            the closing issue comment starting with this exact first line:
+            BRANCH READY: your-branch-name - followed by what shipped,
+            assumptions, exact test count, and a cost estimate in NOK labeled
+            estimate. In the closing
+            issue comment also link the app's dev deployment - the live
+            result after merge: https://zebra-mission-control-git-dev-5000-approaches.vercel.app
+            - never only a branch preview. ALWAYS end
+            the final issue comment with this flag on its own line: LIVE ON
+            DEV ONLY - to go to production, create the promotion PR:
+            https://github.com/5000-approaches/zebra-mission-control/compare/main...dev
+            The rig comments the PR link once the workflow has opened it. If a gate is still red after
+            3 iterations: push the branch anyway, comment on the issue
+            which gate failed and why in plain words, add label
+            rig-blocked, stop. Never push to main. Never merge. Never arm auto-merge. One issue
+            per run." --allowedTools "Edit,Write,MultiEdit,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(mkdir:*),Bash(ls:*),Bash(cat:*),Bash(cp:*),Bash(git checkout:*),Bash(git branch:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rig-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+      - name: Open the PR the moment the build finishes
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.RIG_PR_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set +e +o pipefail
+          # NEVER use git here. The builder action revokes its own git
+          # credentials when it finishes, so the checked-out remote is dead by
+          # the time this step runs (run 30353138984: "Invalid username or
+          # token"). Everything goes through the API with RIG_PR_TOKEN.
+          # And EVERY call is checked: a failed call must never be mistaken for
+          # "nothing to do" - that silent-failure shape is the whole bug this
+          # step exists to kill (caught in review, PR #89).
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "RIG_PR_TOKEN is not available in this repo - nothing this step can do"; exit 1; fi
+          gh api "repos/${REPO}" --jq .full_name > /dev/null
+          if [ $? -ne 0 ]; then
+            echo "RIG_PR_TOKEN cannot read ${REPO} - give the token access to this repository"; exit 1; fi
+
+          # Names AND tip commit ids together. Every later call uses the commit
+          # id, never the branch name: a name contains a slash, and a slash in
+          # an API path silently becomes extra path segments.
+          ALL=$(gh api "repos/${REPO}/branches" --paginate --jq '.[] | .name + " " + .commit.sha')
+          if [ $? -ne 0 ]; then echo "could not list the branches - API call failed, not opening a PR"; exit 1; fi
+          BRANCHES=$(echo "$ALL" | grep -E "^(rig|claude)/issue-${ISSUE}(-| )")
+          if [ -z "$BRANCHES" ]; then echo "no work branch for issue #${ISSUE} - nothing to open"; exit 0; fi
+
+          # Newest by the tip's own commit date. Sorting NAMES would not mean
+          # newest - a name carries a free-text slug (caught in review, PR #89).
+          BEST=""; BR=""; SHA=""
+          while read -r name sha; do
+            [ -z "$name" ] && continue
+            D=$(gh api "repos/${REPO}/commits/${sha}" --jq '.commit.committer.date')
+            if [ $? -ne 0 ] || [ -z "$D" ]; then
+              echo "could not read the commit date of $name - API call failed, not opening a PR"; exit 1; fi
+            if [ -z "$BEST" ] || [ "$D" \> "$BEST" ]; then BEST="$D"; BR="$name"; SHA="$sha"; fi
+          done <<< "$BRANCHES"
+          if [ -z "$BR" ] || [ -z "$SHA" ]; then echo "no usable work branch after reading commit dates"; exit 1; fi
+          echo "work branch: $BR ($SHA)"
+
+          EXISTING=$(gh pr list --repo "$REPO" --head "$BR" --state all --json number --jq '.[0].number // empty')
+          if [ $? -ne 0 ]; then echo "could not check for an existing PR - API call failed, not opening a PR"; exit 1; fi
+          if [ -n "$EXISTING" ]; then echo "PR #$EXISTING already exists for $BR"; exit 0; fi
+
+          # The title is cosmetic - never let it stop the PR. RIG_PR_TOKEN may
+          # have no Issues permission at all (run 30363076410 died right here:
+          # "Resource not accessible by personal access token"). Fall back to
+          # the branch name and carry on.
+          TITLE=$(gh issue view "$ISSUE" --repo "$REPO" --json title --jq .title 2>/dev/null)
+          if [ -z "$TITLE" ]; then
+            TITLE=$(echo "$BR" | sed -E 's#^(rig|claude)/issue-[0-9]+-?##; s#-# #g')
+            [ -z "$TITLE" ] && TITLE="build from issue #${ISSUE}"
+            echo "could not read the issue title (the token may lack Issues read) - using the branch name instead: $TITLE"
+          fi
+          TREE=$(gh api "repos/${REPO}/git/trees/${SHA}?recursive=1" --jq '.tree[] | select(.type=="blob") | .path')
+          if [ $? -ne 0 ]; then echo "could not list the files on $BR - API call failed, not opening a PR"; exit 1; fi
+          FILES=$(echo "$TREE" | grep "^screenshots/issue-${ISSUE}/" | grep -Ei '[.](png|gif)$')
+
+          BODY=$(mktemp)
+          {
+            printf 'Closes #%s\n\n' "$ISSUE"
+            printf 'Built by the rig from issue #%s. What shipped, the assumptions and the exact test count are in the build comment on the issue.\n\n' "$ISSUE"
+            printf '## Proof\n\n'
+            if [ -z "$FILES" ]; then
+              printf 'Nothing visual was produced for this task, so the test result in the build comment on issue #%s is the proof.\n\n' "$ISSUE"
+            else
+              for f in $FILES; do
+                printf '**%s**\n\n' "$(basename "$f")"
+                printf '<img src="https://github.com/%s/blob/%s/%s?raw=true" width="480">\n\n' "$REPO" "$BR" "$f"
+                printf 'Open the file directly: https://github.com/%s/blob/%s/%s\n\n' "$REPO" "$BR" "$f"
+              done
+            fi
+            printf 'Live after merge: https://zebra-mission-control-git-dev-5000-approaches.vercel.app\n\n'
+            printf 'Auto-merge is armed by the code-review job once its review comes back clean.\n'
+          } > "$BODY"
+          PR=$(gh pr create --repo "$REPO" --base dev --head "$BR" --title "#${ISSUE}: ${TITLE}" --body-file "$BODY")
+          if [ $? -ne 0 ] || [ -z "$PR" ]; then echo "gh pr create failed for $BR"; exit 1; fi
+          echo "opened $PR"
+          # Courtesy only - the PR already says "Closes #N" and links itself.
+          # Never fail the step over it; the PR is the deliverable.
+          gh issue comment "$ISSUE" --repo "$REPO" --body "PR opened automatically the moment the build finished: $PR - the code-review job is reading the change now and arms auto-merge when its review comes back clean."
+          if [ $? -ne 0 ]; then
+            echo "PR is open at $PR - commenting it on the issue failed, the token may lack Issues write. Not failing: the PR exists."
+          fi
+  auto-builder:
+    if: ${{ github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'ai-rig' && github.event.issue.user.type == 'Bot' && github.event.issue.state == 'open' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: dev
+          fetch-depth: 0
+      - uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.ANTHROPIC_API_KEY }}
+          show_full_output: true
+          allowed_bots: "claude"
+          prompt: |
+            Build GitHub issue #${{ github.event.issue.number }} ("${{ github.event.issue.title }}") in this repository, exactly per the acceptance criteria in its body below. Follow every rule in your system prompt: branch from dev, write the failing test first, run the loop, pass both clean-context judges, push the branch with the committed screenshots folder, and post the closing issue comment starting with BRANCH READY — do not open a PR; the rig opens it for you.
+
+            ISSUE #${{ github.event.issue.number }} BODY:
+            ${{ github.event.issue.body }}
+          claude_args: >-
+            --append-system-prompt "You are the AI Rig builder running in
+            GitHub Actions. Work from branch dev only: create branch
+            rig/issue-NUMBER-slug from dev for the task. Obey the repo
+            CLAUDE.md fully. THE LOOP, max 3 iterations: write the failing
+            test first, implement, run npm test -- --run, score the result
+            against every criterion in the issue, fix what fails. Never
+            weaken, skip, or delete a test to get green. If the change
+            touches UI, install Playwright chromium, build and serve the
+            app, and verify the changed screen loads. PROOF IS INLINE
+            (Rune's order, decision 209): save screenshots AND - for
+            anything that moves or animates - a 6-10 second screen video
+            (Playwright recordVideo; then with ffmpeg, preinstalled on the runner, make BOTH an animated GIF - 480px wide, 10fps, palette-optimized - AND an mp4, and commit both; the GIF is THE proof because it autoplays inline, the mp4 is the crisp copy; webm is never linked anywhere) under screenshots/issue-NUMBER/ in the repo
+            root, COMMIT that folder on the work branch and push it. PROOF LINKS - THIS REPO IS PRIVATE, so raw.githubusercontent.com returns 404 in a browser: NEVER use it. Rune checked the two forms that work himself on issue #83 - an HTML img tag pointing at the blob URL with ?raw=true SHOWS THE PICTURE INLINE, and a plain blob-page link OPENS the file on one click. So for EVERY screenshot AND for the GIF: write a plain label saying what it shows, then embed it inline with <img src="https://github.com/OWNER/REPO/blob/BRANCH/screenshots/issue-N/FILE?raw=true" width="480"> - do this for the GIF too, an animated GIF embedded this way plays by itself - and directly under it also give the plain blob-page link https://github.com/OWNER/REPO/blob/BRANCH/screenshots/issue-N/FILE as the always-works fallback. Always use an HTML img tag, never markdown image syntax. Name the committed mp4 path as the crisp copy; never link a webm. Before posting, list the files actually committed on the branch and check every path you linked exists there. A zip or run artifact is
+            backup, never the proof. SHIP: before finishing,
+            spawn a fresh subagent with clean context as the scope
+            judge - it reads only the issue and the final diff and must
+            confirm the diff does exactly what the issue asks and nothing
+            more; on veto, fix or stop. Also spawn a second clean-context subagent as code reviewer - it hunts real defects in the final diff; address every finding before finishing. Then simplify the diff, rerun all
+            tests, commit, and push the work branch with git push -u origin
+            rig/issue-NUMBER-slug. Never open a PR yourself and NEVER arm auto-merge: the workflow's own last step opens the PR the second you finish, and ONLY the repo's code-review job may arm the merge, after its review comes back clean. A worker that opens its own PR and arms auto-merge makes the change merge before anyone has reviewed it - that happened on 28 Jul and it is the one thing this pipeline must never do. Post the closing issue comment starting
+            with this exact first line: BRANCH READY: rig/issue-NUMBER-slug
+            - followed by what shipped, assumptions, exact test count, and
+            a cost estimate in NOK labeled estimate. In the closing
+            issue comment also link the app's dev deployment - the live
+            result after merge: https://zebra-mission-control-git-dev-5000-approaches.vercel.app
+            - never only a branch preview. ALWAYS end
+            the final issue comment with this flag on its own line: LIVE ON
+            DEV ONLY - to go to production, create the promotion PR:
+            https://github.com/5000-approaches/zebra-mission-control/compare/main...dev
+            The rig comments the PR link once the workflow has opened it. If a gate is
+            still red after 3 iterations: push the branch anyway, comment
+            on the issue which gate failed and why in plain words, add label
+            rig-blocked, stop. Never push to main. Never merge. Never arm auto-merge. One issue
+            per run." --allowedTools "Edit,Write,MultiEdit,Bash(npm:*),Bash(npx:*),Bash(node:*),Bash(mkdir:*),Bash(ls:*),Bash(cat:*),Bash(cp:*),Bash(git checkout:*),Bash(git branch:*),Bash(git status:*),Bash(git diff:*),Bash(git log:*),Bash(git add:*),Bash(git commit:*),Bash(git push:*)"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rig-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+      - name: Open the PR the moment the build finishes
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.RIG_PR_TOKEN }}
+          ISSUE: ${{ github.event.issue.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set +e +o pipefail
+          # NEVER use git here. The builder action revokes its own git
+          # credentials when it finishes, so the checked-out remote is dead by
+          # the time this step runs (run 30353138984: "Invalid username or
+          # token"). Everything goes through the API with RIG_PR_TOKEN.
+          # And EVERY call is checked: a failed call must never be mistaken for
+          # "nothing to do" - that silent-failure shape is the whole bug this
+          # step exists to kill (caught in review, PR #89).
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "RIG_PR_TOKEN is not available in this repo - nothing this step can do"; exit 1; fi
+          gh api "repos/${REPO}" --jq .full_name > /dev/null
+          if [ $? -ne 0 ]; then
+            echo "RIG_PR_TOKEN cannot read ${REPO} - give the token access to this repository"; exit 1; fi
+
+          # Names AND tip commit ids together. Every later call uses the commit
+          # id, never the branch name: a name contains a slash, and a slash in
+          # an API path silently becomes extra path segments.
+          ALL=$(gh api "repos/${REPO}/branches" --paginate --jq '.[] | .name + " " + .commit.sha')
+          if [ $? -ne 0 ]; then echo "could not list the branches - API call failed, not opening a PR"; exit 1; fi
+          BRANCHES=$(echo "$ALL" | grep -E "^(rig|claude)/issue-${ISSUE}(-| )")
+          if [ -z "$BRANCHES" ]; then echo "no work branch for issue #${ISSUE} - nothing to open"; exit 0; fi
+
+          # Newest by the tip's own commit date. Sorting NAMES would not mean
+          # newest - a name carries a free-text slug (caught in review, PR #89).
+          BEST=""; BR=""; SHA=""
+          while read -r name sha; do
+            [ -z "$name" ] && continue
+            D=$(gh api "repos/${REPO}/commits/${sha}" --jq '.commit.committer.date')
+            if [ $? -ne 0 ] || [ -z "$D" ]; then
+              echo "could not read the commit date of $name - API call failed, not opening a PR"; exit 1; fi
+            if [ -z "$BEST" ] || [ "$D" \> "$BEST" ]; then BEST="$D"; BR="$name"; SHA="$sha"; fi
+          done <<< "$BRANCHES"
+          if [ -z "$BR" ] || [ -z "$SHA" ]; then echo "no usable work branch after reading commit dates"; exit 1; fi
+          echo "work branch: $BR ($SHA)"
+
+          EXISTING=$(gh pr list --repo "$REPO" --head "$BR" --state all --json number --jq '.[0].number // empty')
+          if [ $? -ne 0 ]; then echo "could not check for an existing PR - API call failed, not opening a PR"; exit 1; fi
+          if [ -n "$EXISTING" ]; then echo "PR #$EXISTING already exists for $BR"; exit 0; fi
+
+          # The title is cosmetic - never let it stop the PR. RIG_PR_TOKEN may
+          # have no Issues permission at all (run 30363076410 died right here:
+          # "Resource not accessible by personal access token"). Fall back to
+          # the branch name and carry on.
+          TITLE=$(gh issue view "$ISSUE" --repo "$REPO" --json title --jq .title 2>/dev/null)
+          if [ -z "$TITLE" ]; then
+            TITLE=$(echo "$BR" | sed -E 's#^(rig|claude)/issue-[0-9]+-?##; s#-# #g')
+            [ -z "$TITLE" ] && TITLE="build from issue #${ISSUE}"
+            echo "could not read the issue title (the token may lack Issues read) - using the branch name instead: $TITLE"
+          fi
+          TREE=$(gh api "repos/${REPO}/git/trees/${SHA}?recursive=1" --jq '.tree[] | select(.type=="blob") | .path')
+          if [ $? -ne 0 ]; then echo "could not list the files on $BR - API call failed, not opening a PR"; exit 1; fi
+          FILES=$(echo "$TREE" | grep "^screenshots/issue-${ISSUE}/" | grep -Ei '[.](png|gif)$')
+
+          BODY=$(mktemp)
+          {
+            printf 'Closes #%s\n\n' "$ISSUE"
+            printf 'Built by the rig from issue #%s. What shipped, the assumptions and the exact test count are in the build comment on the issue.\n\n' "$ISSUE"
+            printf '## Proof\n\n'
+            if [ -z "$FILES" ]; then
+              printf 'Nothing visual was produced for this task, so the test result in the build comment on issue #%s is the proof.\n\n' "$ISSUE"
+            else
+              for f in $FILES; do
+                printf '**%s**\n\n' "$(basename "$f")"
+                printf '<img src="https://github.com/%s/blob/%s/%s?raw=true" width="480">\n\n' "$REPO" "$BR" "$f"
+                printf 'Open the file directly: https://github.com/%s/blob/%s/%s\n\n' "$REPO" "$BR" "$f"
+              done
+            fi
+            printf 'Live after merge: https://zebra-mission-control-git-dev-5000-approaches.vercel.app\n\n'
+            printf 'Auto-merge is armed by the code-review job once its review comes back clean.\n'
+          } > "$BODY"
+          PR=$(gh pr create --repo "$REPO" --base dev --head "$BR" --title "#${ISSUE}: ${TITLE}" --body-file "$BODY")
+          if [ $? -ne 0 ] || [ -z "$PR" ]; then echo "gh pr create failed for $BR"; exit 1; fi
+          echo "opened $PR"
+          # Courtesy only - the PR already says "Closes #N" and links itself.
+          # Never fail the step over it; the PR is the deliverable.
+          gh issue comment "$ISSUE" --repo "$REPO" --body "PR opened automatically the moment the build finished: $PR - the code-review job is reading the change now and arms auto-merge when its review comes back clean."
+          if [ $? -ne 0 ]; then
+            echo "PR is open at $PR - commenting it on the issue failed, the token may lack Issues write. Not failing: the PR exists."
+          fi

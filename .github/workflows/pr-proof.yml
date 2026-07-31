@@ -1,0 +1,129 @@
+name: PR proof
+
+# The PR body's Proof section is a promise; this makes it a gate. Installed
+# by /repo-ready (master copy: AI-Pipeline .rig/tools/masters/pr-proof.yml).
+# TESTED AT THE SOURCE: AI-Pipeline runs .rig/tools/pr-proof-test.sh (the
+# body/link logic driven through 12 canned-GitHub cases, slashed branches
+# included) and the camera/clip masters live in that repo's CI with their
+# real GIF+mp4 output committed. Copies inherit the master's proof; the
+# engine re-copies on every run, so a master fix propagates fleet-wide.
+#
+# Two checks, both of which have burned Rune before:
+#   1. A runnable change may not ship an empty Proof section — "there is
+#      nothing to show" means the thing was not run.
+#   2. Every picture LINKED in the body must really exist on its branch —
+#      he clicked too many links that 404'd. The check resolves slashed
+#      branch names by longest prefix against the real branch list, because
+#      /blob/<branch>/<path> is ambiguous when branches contain slashes.
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  # The committed-picture gate, wired as its own job so it enforces in CI
+  # without editing any repo's existing ci.yml (review catch: an installed
+  # gate nobody calls enforces nothing). check-proof.sh judges the FILES of
+  # this change; the pr-proof job below judges the BODY and its links.
+  proof-files:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Every change that can be watched run must carry its picture
+        env:
+          # Both refs arrive through env, never inline in the command — a
+          # branch name can carry quotes and dollar signs, and untrusted
+          # text in a command line is an injection (review catch,
+          # sweettalker fleet PR).
+          PROOF_BASE: origin/${{ github.event.pull_request.base.ref }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          git fetch --no-tags origin "$BASE_REF"
+          bash scripts/check-proof.sh
+      - name: Drive the proof gate through every case
+        run: bash scripts/check-proof-test.sh
+
+  pr-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: The Proof section is filled and every linked picture exists
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+          BASE: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -uo pipefail
+          FAIL=0
+          BODY=$(gh pr view "$PR" --repo "$REPO" --json body --jq .body)
+
+          # --- does this change owe proof at all? --------------------------
+          # Same runnable filter as scripts/check-proof.sh (kept in step so
+          # this workflow works even in a repo that lacks the script).
+          CHANGED=$(gh pr diff "$PR" --repo "$REPO" --name-only)
+          RUNNABLE=$(printf '%s\n' "$CHANGED" \
+            | grep -Ev '^\s*$' \
+            | grep -Ev '^screenshots/' \
+            | grep -Ev '(^|/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$' \
+            | grep -Ev '\.(md|mdx|txt|csv|svg|ico|snap)$' \
+            | grep -Ev '(^|/)__tests__/|\.test\.[jt]sx?$|\.spec\.[jt]sx?$|^e2e/' \
+            | grep -E '\.(m?[jt]sx?|css|scss|html|ya?ml|json|sh|py|sql)$|^\.github/workflows/' \
+            || true)
+
+          if [ -n "$RUNNABLE" ]; then
+            # HTML comments are the template's own instructions, and the
+            # template's example <img> tag lives inside one — an untouched
+            # placeholder must never satisfy the gate (review catch,
+            # sweettalker fleet PR). Strip comments before judging.
+            SECTION=$(printf '%s\n' "$BODY" | awk '/^## Proof/{on=1;next} /^## /{on=0} on' | perl -0pe 's/<!--.*?-->//gs')
+            if [ -z "$(printf '%s' "$SECTION" | tr -d '[:space:]')" ]; then
+              echo "❌ this change can be watched run, and its Proof section is missing or empty"
+              FAIL=1
+            elif ! printf '%s\n' "$SECTION" | grep -qiE '<img |cannot be run|nothing visual was produced'; then
+              echo "❌ the Proof section carries no inline picture and no stated reason there is none"
+              FAIL=1
+            else
+              echo "✅ the Proof section is filled"
+            fi
+          else
+            echo "✅ nothing in this change can be watched run — no proof owed"
+          fi
+
+          # --- every linked blob really exists on its branch ---------------
+          LINKS=$(printf '%s\n' "$BODY" \
+            | grep -oE 'https://github\.com/[A-Za-z0-9._-]+/[A-Za-z0-9._-]+/blob/[^ )"<>]+' \
+            | sed 's/[.,;:]*$//' | sed 's/?raw=true$//' | sort -u || true)
+          if [ -n "$LINKS" ]; then
+            BRANCHES=$(gh api "repos/$REPO/branches" --paginate --jq '.[].name')
+            for L in $LINKS; do
+              case "$L" in
+                https://github.com/$REPO/blob/*) ;;
+                *) echo "note: $L points outside this repo — not checkable with this token"; continue ;;
+              esac
+              REST="${L#https://github.com/$REPO/blob/}"
+              # Longest branch name that prefixes REST wins; remainder = path.
+              REF=""; while read -r B; do
+                case "$REST" in "$B"/*) [ ${#B} -gt ${#REF} ] && REF="$B" ;; esac
+              done <<< "$BRANCHES"
+              if [ -z "$REF" ]; then
+                echo "❌ broken link (no such branch): $L"; FAIL=1; continue
+              fi
+              P="${REST#"$REF"/}"
+              if ! gh api "repos/$REPO/contents/$P?ref=$REF" --jq .sha > /dev/null 2>&1; then
+                echo "❌ broken link (file not on $REF): $L"; FAIL=1
+              else
+                echo "✅ exists: $L"
+              fi
+            done
+          fi
+
+          [ "$FAIL" -eq 0 ] || exit 1

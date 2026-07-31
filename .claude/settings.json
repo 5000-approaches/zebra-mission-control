@@ -1,0 +1,51 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import json,sys,os,re;d=json.load(sys.stdin);c=d.get('tool_input',{}).get('command','');\nblock=lambda m:(print('HOOK BLOCKED: '+m),sys.exit(2));\nre.search(r'git\\\\b[^;|&]*\\\\bpush\\\\b[^;|&]*\\\\bmain\\\\b|git\\\\b[^;|&]*\\\\bmerge\\\\b[^;|&]*\\\\bmain\\\\b|gh\\\\b[^;|&]*\\\\bpr merge\\\\b',c) and block('Never push to main or merge. Open a PR instead.');\nre.search(r'rm -rf /(\\\\s|$)|sudo rm|drop\\\\s+table|delete\\\\s+from.*where\\\\s+1',c,re.I) and block('Destructive command requires explicit approval.');\nre.search(r'resend|sendEmail|send_email|mail\\\\(',c) and block('Never email users without Rune explicit approval. Ask first.');\nflag=os.path.join(os.environ.get('CLAUDE_PROJECT_DIR','.'),'.git','.rig-tests-passed');\nre.search(r'git commit|gh pr create',c) and not os.path.exists(flag) and block('Run the test suite first - the tests-passed marker is missing. It is written only when a test command SUCCEEDS, and it expires when code changes after the run.')\""
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import json,sys,os,re;d=json.load(sys.stdin);c=d.get('tool_input',{}).get('command','');r=d.get('tool_response',{});ok=not (r.get('is_error') if isinstance(r,dict) else False)\nmasked=re.search(r'\\\\|\\\\||\\\\|\\\\s*grep|;\\\\s*true\\\\b|&&\\\\s*true\\\\b',c)\nif re.search(r'\\\\bnpm (run )?test(\\\\s|$)|\\\\bnpx vitest\\\\b|\\\\bvitest\\\\b',c) and ok and not masked:\n    p=os.path.join(os.environ.get('CLAUDE_PROJECT_DIR','.'),'.git')\n    os.path.isdir(p) and open(os.path.join(p,'.rig-tests-passed'),'w').write('ok')\""
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 -c \"import os;p=os.path.join(os.environ.get('CLAUDE_PROJECT_DIR','.'),'.git','.rig-tests-passed');os.path.exists(p) and os.remove(p)\""
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "deny": [
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.openclaw/workspace/openclaw.json)",
+      "Read(**/.env*)",
+      "Read(**/secrets/**)",
+      "Write(~/.ssh/**)",
+      "Write(~/.aws/**)",
+      "Bash(curl * | bash)",
+      "Bash(wget * | sh)",
+      "Bash(nc *)",
+      "Bash(ssh *)",
+      "Bash(scp *)"
+    ]
+  }
+}
