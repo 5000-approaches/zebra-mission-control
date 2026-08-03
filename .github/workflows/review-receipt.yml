@@ -1,0 +1,41 @@
+name: review-receipt
+on:
+  pull_request:
+    branches: [dev]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  review-receipt:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PR: ${{ github.event.pull_request.number }}
+      REPO: ${{ github.repository }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      ALLOWED_AUTHORS: "5000approaches"
+    steps:
+      - name: Check for a CLEAN review receipt on this exact SHA
+        run: |
+          set -euo pipefail
+          RECEIPTS=$(gh api "repos/$REPO/issues/$PR/comments" --paginate \
+            --jq '.[] | select(.body | test("^LeanCC-Review: (CLEAN|BLOCKED) sha=")) | "\(.user.login) \(.body | split("\n")[0])"')
+          MATCH=""
+          while IFS= read -r LINE; do
+            [ -z "$LINE" ] && continue
+            AUTHOR="${LINE%% *}"
+            BODY="${LINE#* }"
+            case " $ALLOWED_AUTHORS " in
+              *" $AUTHOR "*) ;;
+              *) continue ;;
+            esac
+            [ "$BODY" = "LeanCC-Review: CLEAN sha=$HEAD_SHA" ] && MATCH=clean
+            [ "$BODY" = "LeanCC-Review: BLOCKED sha=$HEAD_SHA" ] && MATCH=blocked
+          done <<< "$RECEIPTS"
+          [ "$MATCH" = clean ] && exit 0
+          [ "$MATCH" = blocked ] && echo "The exact head has a blocking review receipt."
+          [ "$MATCH" = blocked ] && exit 1
+          echo "No clean review receipt exists for $HEAD_SHA."
+          exit 1
