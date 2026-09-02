@@ -88,6 +88,54 @@ describe("listServerTools", () => {
   });
 });
 
+describe("unauthenticated servers", () => {
+  it("sends no auth header when the key is empty", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(jsonResponse({ result: { tools: [] } }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await listServerTools({ ...SERVER, key: "" });
+
+    const headers = mockFetch.mock.calls[0][1].headers as Record<string, string>;
+    expect(headers).not.toHaveProperty("Authorization");
+    expect(headers["Content-Type"]).toBe("application/json");
+  });
+});
+
+describe("initialize retry for streamable HTTP", () => {
+  it("initializes once and retries with the session id when the server demands a session", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(jsonResponse({ error: { code: -32000, message: "Bad Request: No valid session ID provided" } }))
+      .mockResolvedValueOnce({
+        ...jsonResponse({ result: { protocolVersion: "2024-11-05" } }),
+        headers: { get: (k: string) => (k.toLowerCase() === "mcp-session-id" ? "sess-1" : k.toLowerCase() === "content-type" ? "application/json" : null) },
+      })
+      .mockResolvedValueOnce({ ok: true, status: 202, statusText: "Accepted", headers: { get: () => null }, text: async () => "" })
+      .mockResolvedValueOnce(jsonResponse({ result: { tools: [{ name: "a" }] } }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    const tools = await listServerTools(SERVER);
+
+    expect(tools).toEqual([{ name: "a", description: "", inputSchema: {} }]);
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+    const bodies = mockFetch.mock.calls.map((c) => JSON.parse(c[1].body as string));
+    expect(bodies.map((b) => b.method)).toEqual(["tools/list", "initialize", "notifications/initialized", "tools/list"]);
+    expect(bodies[2]).not.toHaveProperty("id");
+    const lastHeaders = mockFetch.mock.calls[3][1].headers as Record<string, string>;
+    expect(lastHeaders["Mcp-Session-Id"]).toBe("sess-1");
+  });
+
+  it("does not retry twice when initialization does not help", async () => {
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValue(jsonResponse({ error: { code: -32000, message: "Server not initialized" } }));
+    vi.stubGlobal("fetch", mockFetch);
+
+    await expect(listServerTools(SERVER)).rejects.toThrow(/not initialized/);
+    expect(mockFetch).toHaveBeenCalledTimes(4);
+  });
+});
+
 describe("callServerTool", () => {
   it("posts tools/call with name and arguments", async () => {
     const mockFetch = vi.fn().mockResolvedValue(jsonResponse({ result: { content: [{ type: "text", text: "ok" }] } }));

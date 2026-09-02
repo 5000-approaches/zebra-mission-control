@@ -3,6 +3,8 @@ import { loadServers } from "@/lib/mcp-servers";
 import { discoverServer, jsonError } from "../../route";
 
 export const dynamic = "force-dynamic";
+// Tool discovery + catalog generation can exceed the Vercel default function limit.
+export const maxDuration = 60;
 
 type RouteContext = { params: Promise<{ id: string }> };
 

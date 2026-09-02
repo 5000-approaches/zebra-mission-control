@@ -5,6 +5,8 @@ import { getCatalog, type ServerCatalog } from "@/lib/tool-catalog";
 import type { McpTool } from "@/lib/mcp-client";
 
 export const dynamic = "force-dynamic";
+// Tool discovery + catalog generation can exceed the Vercel default function limit.
+export const maxDuration = 60;
 
 export type IntegrationTool = {
   name: string;
@@ -20,6 +22,8 @@ export type IntegrationTools = {
   label: string;
   tools: IntegrationTool[];
   howToCombine?: string;
+  /** Why plain-language summaries are missing (tools still listed with raw descriptions). */
+  catalogError?: string;
   error?: string;
 };
 
@@ -48,9 +52,17 @@ export async function GET(): Promise<Response> {
     listed.map(async ({ server, tools, error }): Promise<IntegrationTools> => {
       if (error !== undefined) return { id: server.id, label: server.name, tools: [], error };
       const config = configById.get(server.id);
-      const catalog = config ? await getCatalog(config, tools).catch(() => null) : null;
+      let catalogError: string | undefined;
+      const catalog = config
+        ? await getCatalog(config, tools).catch((err: unknown) => {
+            catalogError = err instanceof Error ? err.message : String(err);
+            return null;
+          })
+        : null;
       const base: IntegrationTools = { id: server.id, label: server.name, tools: withCatalog(tools, catalog) };
-      return catalog?.howToCombine ? { ...base, howToCombine: catalog.howToCombine } : base;
+      const withCombine = catalog?.howToCombine ? { ...base, howToCombine: catalog.howToCombine } : base;
+      const problem = catalog?.generationError ?? catalogError;
+      return problem ? { ...withCombine, catalogError: problem } : withCombine;
     })
   );
 

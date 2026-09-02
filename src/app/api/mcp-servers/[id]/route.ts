@@ -6,6 +6,8 @@ import { deleteEnvValue } from "@/lib/vercel-env";
 import { jsonError, readServerBody, type ServerBody } from "../route";
 
 export const dynamic = "force-dynamic";
+// Tool discovery + catalog generation can exceed the Vercel default function limit.
+export const maxDuration = 60;
 
 type RouteContext = { params: Promise<{ id: string }> };
 
@@ -26,7 +28,7 @@ function originOf(url: string): string | null {
 
 /** A stored key must never be re-sent to a different host than it was entered for. */
 function movesKeyToNewOrigin(server: McpServerConfig, body: ServerBody): boolean {
-  if (body.url === undefined || body.key) return false;
+  if (!server.key || body.url === undefined || body.key) return false;
   return originOf(body.url) !== originOf(server.url);
 }
 
@@ -36,6 +38,7 @@ function mergeServer(server: McpServerConfig, body: ServerBody): McpServerConfig
     url: body.url ?? server.url,
     key: body.key ? body.key : server.key,
     headerName: body.headerName ?? server.headerName,
+    transport: body.transport ?? server.transport,
   });
   if (!validated.ok) return jsonError(validated.error, 400);
   return { ...server, ...validated.value };

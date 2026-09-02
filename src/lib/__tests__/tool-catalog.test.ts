@@ -73,7 +73,14 @@ describe("generateCatalog", () => {
     anthropicMocks.create.mockRejectedValue(new Error("api down"));
     const catalog = await generateCatalog(SERVER, TOOLS);
     expect(catalog.tools[1].purpose).toBe("Retrieve the top projects by billable amount.");
+    expect(catalog.generationError).toBe("api down");
     expect(setEnvValue).not.toHaveBeenCalled();
+  });
+
+  it("carries no generationError when Claude succeeds", async () => {
+    anthropicMocks.create.mockResolvedValue({ stop_reason: "end_turn", content: [{ type: "text", text: JSON.stringify(GENERATED) }] });
+    const catalog = await generateCatalog(SERVER, TOOLS);
+    expect(catalog.generationError).toBeUndefined();
   });
 
   it("fills in tools Claude omitted from the fallback", async () => {

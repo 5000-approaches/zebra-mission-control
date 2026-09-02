@@ -1,4 +1,5 @@
 import type { McpServerConfig } from "./mcp-servers";
+import { isSseServer, sseRpc, type JsonRpcReply } from "./mcp-sse";
 
 export type McpTool = {
   name: string;
@@ -11,22 +12,28 @@ export type McpToolResult = {
   isError?: boolean;
 };
 
-type JsonRpcReply = { id?: unknown; result?: unknown; error?: unknown };
 type CachedTools = { tools: McpTool[]; fetchedAt: number };
+type Session = { id: string | null };
 
 const REQUEST_TIMEOUT_MS = 15_000;
 const MAX_BODY_BYTES = 1_048_576;
 const TOOL_CACHE_TTL_MS = 30_000;
 const LIST_ID = 1;
 const CALL_ID = 2;
+const INIT_ID = 0;
+const PROTOCOL_VERSION = "2024-11-05";
+const CLIENT_INFO = { name: "zebra-mission-control", version: "1" };
+const SESSION_HEADER = "Mcp-Session-Id";
+const NEEDS_INIT_PATTERN = /initializ|session/i;
 
 const toolCache = new Map<string, CachedTools>();
 
-function headersFor(server: McpServerConfig): Record<string, string> {
+function headersFor(server: McpServerConfig, session?: Session): Record<string, string> {
   return {
     "Content-Type": "application/json",
     Accept: "application/json, text/event-stream",
-    [server.headerName]: server.key,
+    ...(server.key ? { [server.headerName]: server.key } : {}),
+    ...(session?.id ? { [SESSION_HEADER]: session.id } : {}),
   };
 }
 
@@ -69,18 +76,55 @@ export async function readJsonRpc(res: Response, expectedId?: number): Promise<J
   return matching ?? replies[replies.length - 1];
 }
 
-async function rpc(server: McpServerConfig, id: number, method: string, params: unknown): Promise<unknown> {
+type JsonRpcPayload = { jsonrpc: "2.0"; id?: number; method: string; params?: unknown };
+
+async function postJsonRpc(server: McpServerConfig, payload: JsonRpcPayload, session?: Session): Promise<Response> {
   const res = await fetch(server.url, {
     method: "POST",
-    headers: headersFor(server),
-    body: JSON.stringify({ jsonrpc: "2.0", id, method, params }),
+    headers: headersFor(server, session),
+    body: JSON.stringify(payload),
     redirect: "error",
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
-  if (!res.ok) throw new Error(`MCP ${method} failed: ${res.status} ${res.statusText}`);
-  const data = await readJsonRpc(res, id);
-  if (data.error) throw new Error(`MCP error: ${JSON.stringify(data.error)}`);
-  return data.result;
+  if (!res.ok) throw new Error(`MCP ${payload.method} failed: ${res.status} ${res.statusText}`);
+  return res;
+}
+
+async function httpRpc(server: McpServerConfig, id: number, method: string, params: unknown, session?: Session): Promise<JsonRpcReply> {
+  const res = await postJsonRpc(server, { jsonrpc: "2.0", id, method, params }, session);
+  return readJsonRpc(res, id);
+}
+
+/** Some streamable-HTTP servers insist on an `initialize` handshake; returns the session to reuse. */
+async function initializeHttp(server: McpServerConfig): Promise<Session> {
+  const res = await postJsonRpc(server, {
+    jsonrpc: "2.0",
+    id: INIT_ID,
+    method: "initialize",
+    params: { protocolVersion: PROTOCOL_VERSION, capabilities: {}, clientInfo: CLIENT_INFO },
+  });
+  const session: Session = { id: res.headers.get(SESSION_HEADER) };
+  await readJsonRpc(res, INIT_ID).catch(() => undefined);
+  await postJsonRpc(server, { jsonrpc: "2.0", method: "notifications/initialized" }, session);
+  return session;
+}
+
+function needsInitialize(reply: JsonRpcReply): boolean {
+  return reply.error !== undefined && NEEDS_INIT_PATTERN.test(JSON.stringify(reply.error));
+}
+
+async function rpc(server: McpServerConfig, id: number, method: string, params: unknown): Promise<unknown> {
+  if (isSseServer(server)) return unwrap(await sseRpc(server, id, method, params), method);
+
+  const first = await httpRpc(server, id, method, params);
+  if (!needsInitialize(first)) return unwrap(first, method);
+  const session = await initializeHttp(server);
+  return unwrap(await httpRpc(server, id, method, params, session), method);
+}
+
+function unwrap(reply: JsonRpcReply, method: string): unknown {
+  if (reply.error) throw new Error(`MCP error (${method}): ${JSON.stringify(reply.error)}`);
+  return reply.result;
 }
 
 function freshEnough(entry: CachedTools | undefined): entry is CachedTools {

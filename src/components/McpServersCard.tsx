@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState, FormEvent } from "react";
 import { RefreshCw, Trash2, Pencil, Plus } from "lucide-react";
 
+export type McpTransportOption = "" | "http" | "sse";
+
 export type McpServerView = {
   id: string;
   name: string;
@@ -10,11 +12,30 @@ export type McpServerView = {
   headerName: string;
   builtIn: boolean;
   keyMasked: string;
+  transport?: "http" | "sse";
 };
 
-type ServerForm = { name: string; url: string; headerName: string; key: string };
+type ServerForm = { name: string; url: string; headerName: string; key: string; transport: McpTransportOption };
 
-const EMPTY_FORM: ServerForm = { name: "", url: "", headerName: "x-functions-key", key: "" };
+const EMPTY_FORM: ServerForm = { name: "", url: "", headerName: "x-functions-key", key: "", transport: "" };
+const NO_KEY = "none";
+
+const TRANSPORT_OPTIONS: Array<{ value: McpTransportOption; label: string }> = [
+  { value: "", label: "Auto-detect" },
+  { value: "http", label: "Standard (HTTP)" },
+  { value: "sse", label: "SSE stream (older MCP servers)" },
+];
+
+/** Omit an empty transport so the server auto-detects; omit an empty key on edit so the stored one is kept. */
+function toRequestBody(form: ServerForm, editing: boolean): Record<string, string | undefined> {
+  return {
+    name: form.name,
+    url: form.url,
+    headerName: form.headerName,
+    key: editing ? form.key || undefined : form.key,
+    transport: form.transport || undefined,
+  };
+}
 
 const inputStyle = {
   background: "var(--page-bg)",
@@ -85,12 +106,33 @@ function ServerForm({
       <Field label="MCP URL" type="url" value={form.url} onChange={set("url")} placeholder="https://…" />
       <Field label="Header name" value={form.headerName} onChange={set("headerName")} placeholder="x-functions-key" />
       <Field
-        label={editing ? "API key / password (leave blank to keep)" : "API key / password"}
+        label={editing ? "API key or password (optional, leave blank to keep)" : "API key or password (optional)"}
         type="password"
         value={form.key}
         onChange={set("key")}
-        placeholder="••••••••"
+        placeholder="leave empty if the server needs none"
       />
+      <label className="block sm:col-span-2">
+        <span className="block text-xs mb-1" style={{ color: "var(--page-text)", opacity: 0.65 }}>
+          Connection type
+        </span>
+        <select
+          value={form.transport}
+          onChange={(e) => set("transport")(e.target.value as McpTransportOption)}
+          className="w-full sm:w-auto rounded-lg px-3 py-2 text-sm outline-none"
+          style={inputStyle}
+          data-testid="mcp-transport-select"
+        >
+          {TRANSPORT_OPTIONS.map((o) => (
+            <option key={o.value} value={o.value}>
+              {o.label}
+            </option>
+          ))}
+        </select>
+        <span className="block text-[11px] mt-1" style={{ color: "var(--page-text)", opacity: 0.5 }}>
+          Auto-detected when the URL ends with /sse.
+        </span>
+      </label>
       <div className="sm:col-span-2 flex items-center gap-3">
         <button
           type="submit"
@@ -143,7 +185,8 @@ function ServerRow({
           {server.url}
         </p>
         <p className="text-[11px] font-mono" style={{ opacity: 0.45 }}>
-          {server.headerName}: {server.keyMasked}
+          {server.keyMasked === NO_KEY ? "no key" : `${server.headerName}: ${server.keyMasked}`}
+          {server.transport === "sse" && " · SSE"}
         </p>
       </div>
       <button type="button" title="Refresh tools" aria-label="Refresh tools" onClick={onRefresh} disabled={busy} className={iconBtn} style={{ opacity: 0.7 }}>
@@ -216,7 +259,7 @@ export function McpServersCard({ onChanged }: Props) {
       const res = await fetch("/api/mcp-servers", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(toRequestBody(form, false)),
       });
       if (!res.ok) throw new Error(await readError(res));
       const body = (await res.json()) as { server: McpServerView; tools: unknown[]; error?: string };
@@ -228,11 +271,10 @@ export function McpServersCard({ onChanged }: Props) {
 
   function handleEdit(id: string, form: ServerForm) {
     run(async () => {
-      const patch = { ...form, key: form.key || undefined };
       const res = await fetch(`/api/mcp-servers/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(patch),
+        body: JSON.stringify(toRequestBody(form, true)),
       });
       if (!res.ok) throw new Error(await readError(res));
       setEditingId(null);
@@ -296,7 +338,7 @@ export function McpServersCard({ onChanged }: Props) {
       {editing && (
         <ServerForm
           key={editing.id}
-          initial={{ name: editing.name, url: editing.url, headerName: editing.headerName, key: "" }}
+          initial={{ name: editing.name, url: editing.url, headerName: editing.headerName, key: "", transport: editing.transport ?? "" }}
           editing
           busy={busy}
           onSubmit={(form) => handleEdit(editing.id, form)}

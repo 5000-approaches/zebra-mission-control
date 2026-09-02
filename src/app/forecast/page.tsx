@@ -4,6 +4,7 @@ export const dynamic = "force-dynamic";
 
 import { useEffect, useState } from "react";
 import type { ForecastApiResponse, ForecastMonth } from "@/app/api/forecast/route";
+import { missingDataReasons } from "@/lib/forecast-missing";
 
 function fmt(n: number) {
   return n.toLocaleString("nb-NO", { maximumFractionDigits: 0 });
@@ -218,6 +219,7 @@ function ForecastChart({
                 fill="var(--page-text)"
                 opacity={0.8}
               >
+                {m.error && <title>{m.error}</title>}
                 {m.error ? "no data" : fmtCompact(m.projected)}
               </text>
               {/* Earned sub-label for current month, shown below the projected total */}
@@ -248,6 +250,24 @@ function ForecastChart({
           );
         })}
       </svg>
+      <MissingDataList months={months} />
+    </div>
+  );
+}
+
+function MissingDataList({ months }: { months: ForecastMonth[] }) {
+  const reasons = missingDataReasons(months);
+  if (reasons.length === 0) return null;
+  return (
+    <div data-testid="missing-data-list" className="mt-4 text-xs" style={{ color: "var(--page-text)" }}>
+      <div className="font-semibold opacity-70 mb-1">Why no data:</div>
+      <ul className="flex flex-col gap-0.5">
+        {reasons.map((r) => (
+          <li key={r.month} className="opacity-60">
+            <span className="font-medium">{r.label}:</span> {r.error}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

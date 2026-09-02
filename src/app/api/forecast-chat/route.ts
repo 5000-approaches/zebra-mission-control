@@ -187,3 +187,6 @@ export async function POST(req: Request) {
     headers: { "Content-Type": "text/plain; charset=utf-8" },
   });
 }
+
+// Tool discovery + catalog generation can exceed the Vercel default function limit.
+export const maxDuration = 60;
