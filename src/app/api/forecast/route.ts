@@ -1,4 +1,7 @@
+import { requireSessionOrApiSecret } from "@/lib/api-auth";
 import { listTools, callTool } from "@/lib/poweroffice-mcp";
+import { toDdMmYyyy } from "@/lib/forecast-dates";
+import { parseForecastEnvelope, type ForecastPayload } from "@/lib/forecast-envelope";
 
 export type ForecastMonth = {
   month: string;
@@ -7,6 +10,8 @@ export type ForecastMonth = {
   projected: number;
   adjustments: number;
   calculatedAt: string;
+  /** Set when this slot could not be computed; observed/projected are then 0. */
+  error?: string;
   /** Present only when ?debug=1 — raw text returned by the MCP `forecast` tool. */
   rawText?: string;
 };
@@ -21,6 +26,8 @@ export type ForecastApiResponse = {
     adjustments: number;
   };
 };
+
+const NOT_ENOUGH_DAYS = "Not enough booked days yet this month";
 
 type OsloDate = { year: number; month: number; day: number };
 
@@ -59,22 +66,6 @@ function getOsloMonths(today: OsloDate): string[] {
   });
 }
 
-type ForecastPayload = {
-  AnalysisPeriodTotal?: number;
-  ProjectedTotal?: number;
-  DailyAverage?: number;
-  Notes?: string;
-  CalculatedAt?: string;
-};
-
-function parsePayload(text: string): ForecastPayload {
-  try {
-    return JSON.parse(text) as ForecastPayload;
-  } catch {
-    return {};
-  }
-}
-
 function num(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
@@ -83,22 +74,140 @@ function num(v: unknown): number {
  * "Reduced projected revenue by X NOK" / "Reduced projected revenue by 0.00 NOK".
  * Surface the absolute reduction as the adjustments figure.
  */
-function extractAdjustments(notes: string | undefined): number {
-  if (!notes) return 0;
+function extractAdjustments(notes: unknown): number {
+  if (typeof notes !== "string" || !notes) return 0;
   const m = notes.match(/Reduced projected revenue by ([\d,.]+)\s*NOK/i);
   if (!m) return 0;
   const n = parseFloat(m[1].replace(/,/g, ""));
   return Number.isFinite(n) ? n : 0;
 }
 
-export async function GET(req: Request) {
-  const apiSecret = process.env.FORECAST_API_SECRET;
-  if (apiSecret) {
-    const provided = req.headers.get("x-api-secret");
-    if (provided !== apiSecret) {
-      return new Response("Unauthorized", { status: 401 });
+type IsoArgs = { from_date: string; to_date: string; forecast_until_date: string };
+
+type CallPlan = {
+  kind: "past" | "current" | "future";
+  month: string;
+  args: IsoArgs;
+  /** Reason the slot is skipped without calling the tool. */
+  skip?: string;
+};
+
+// Past M:    from=M-start, to=M-end,            forecast_until=today        → AnalysisPeriodTotal = actual M revenue
+// Current M: from=M-start, to=yesterday,        forecast_until=M-end        → AnalysisPeriodTotal = MTD, ProjectedTotal = full-month estimate
+// Future M:  cumulative from current-month-start through M-end; projected M = cumThruM - cumThruPrevM
+//
+// The MCP requires from_date strictly before to_date, and errors when to_date == today
+// (today's entries aren't booked yet), so current/future slots use yesterday. On day 1-2
+// of a month that leaves no analysis window, so those slots are skipped with a reason.
+function buildPlans(today: OsloDate, months: string[]): CallPlan[] {
+  const todayIso = isoDate(today);
+  const yesterdayIso = new Date(Date.UTC(today.year, today.month - 1, today.day - 1))
+    .toISOString()
+    .slice(0, 10);
+  const currentMonthStart = `${today.year}-${String(today.month).padStart(2, "0")}-01`;
+  const hasAnalysisWindow = yesterdayIso > currentMonthStart;
+
+  return months.map((m): CallPlan => {
+    const [yStr, monStr] = m.split("-");
+    const y = parseInt(yStr);
+    const mon = parseInt(monStr);
+    const mStart = `${m}-01`;
+    const mEnd = `${m}-${String(lastDayOfMonth(y, mon)).padStart(2, "0")}`;
+    const isCurrent = y === today.year && mon === today.month;
+    const isFuture = y > today.year || (y === today.year && mon > today.month);
+
+    if (isCurrent || isFuture) {
+      return {
+        kind: isCurrent ? "current" : "future",
+        month: m,
+        args: { from_date: currentMonthStart, to_date: yesterdayIso, forecast_until_date: mEnd },
+        skip: hasAnalysisWindow ? undefined : NOT_ENOUGH_DAYS,
+      };
     }
+    return {
+      kind: "past",
+      month: m,
+      args: { from_date: mStart, to_date: mEnd, forecast_until_date: todayIso },
+    };
+  });
+}
+
+function toMcpArgs(args: IsoArgs): Record<string, string> {
+  return {
+    from_date: toDdMmYyyy(args.from_date),
+    to_date: toDdMmYyyy(args.to_date),
+    forecast_until_date: toDdMmYyyy(args.forecast_until_date),
+  };
+}
+
+type SlotResult = {
+  plan: CallPlan;
+  text: string;
+  payload: ForecastPayload;
+  error?: string;
+};
+
+/** One month slot. A failing call never fails the whole forecast — it becomes `error` on that slot. */
+async function runPlan(plan: CallPlan): Promise<SlotResult> {
+  if (plan.skip) return { plan, text: "", payload: {}, error: plan.skip };
+
+  try {
+    const r = await callTool("forecast", toMcpArgs(plan.args));
+    const text = r.content
+      .map((c) => c.text ?? "")
+      .join("\n")
+      .trim();
+    const parsed = parseForecastEnvelope(text);
+    if (!parsed.ok) return { plan, text, payload: {}, error: parsed.error };
+    if (r.isError === true) return { plan, text, payload: {}, error: text.slice(0, 200) || "Tool error" };
+    return { plan, text, payload: parsed.payload };
+  } catch (err) {
+    return { plan, text: "", payload: {}, error: err instanceof Error ? err.message : String(err) };
   }
+}
+
+function toMonth(
+  r: SlotResult,
+  index: number,
+  months: string[],
+  cumProjectedByMonth: Map<string, number>,
+  debug: boolean
+): ForecastMonth {
+  const { plan, text, payload, error } = r;
+  const calculatedAt =
+    typeof payload.CalculatedAt === "string" ? payload.CalculatedAt : new Date().toISOString();
+  const base: ForecastMonth = {
+    month: plan.month,
+    observed: 0,
+    dailyAverage: num(payload.DailyAverage),
+    projected: 0,
+    adjustments: extractAdjustments(payload.Notes),
+    calculatedAt,
+    ...(error ? { error } : {}),
+    ...(debug ? { rawText: text } : {}),
+  };
+  if (error) return base;
+  if (plan.kind === "past") {
+    const observed = num(payload.AnalysisPeriodTotal);
+    return { ...base, observed, projected: observed };
+  }
+  if (plan.kind === "current") {
+    return { ...base, observed: num(payload.AnalysisPeriodTotal), projected: num(payload.ProjectedTotal) };
+  }
+  const prevCum = cumProjectedByMonth.get(months[index - 1]) ?? 0;
+  return { ...base, projected: Math.max(0, num(payload.ProjectedTotal) - prevCum) };
+}
+
+function jsonError(error: string, status: number): Response {
+  return new Response(JSON.stringify({ error }), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export async function GET(req: Request) {
+  const denied = await requireSessionOrApiSecret(req);
+  if (denied) return denied;
 
   const url = new URL(req.url);
   const debug = url.searchParams.get("debug") === "1";
@@ -108,154 +217,29 @@ export async function GET(req: Request) {
     tools = await listTools();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    return new Response(JSON.stringify({ error: `MCP tools/list failed: ${msg}` }), {
-      status: 502,
-      headers: { "Content-Type": "application/json" },
-    });
+    return jsonError(`MCP tools/list failed: ${msg}`, 502);
   }
 
   const toolNames = tools.map((t) => t.name);
   if (!toolNames.includes("forecast")) {
-    return new Response(
-      JSON.stringify({
-        error: `No forecast tool found. Available tools: ${toolNames.join(", ")}`,
-      }),
-      { status: 501, headers: { "Content-Type": "application/json" } }
-    );
+    return jsonError(`No forecast tool found. Available tools: ${toolNames.join(", ")}`, 501);
   }
 
   const today = osloToday();
-  const todayIso = isoDate(today);
   const months = getOsloMonths(today);
+  const plans = buildPlans(today, months);
 
-  // The PowerOffice MCP `forecast` tool errors when to_date == today, because
-  // the current day's time entries aren't booked yet — pass yesterday instead
-  // so the analysis period always lands on a fully-booked day.
-  const yesterdayDate = new Date(Date.UTC(today.year, today.month - 1, today.day - 1));
-  const yesterdayIso = yesterdayDate.toISOString().slice(0, 10);
+  const results = await Promise.all(plans.map(runPlan));
 
-  const currentMonthStart = `${today.year}-${String(today.month).padStart(2, "0")}-01`;
+  // Cumulative ProjectedTotals by month for the future-diff computation. The
+  // current-month plan's ProjectedTotal doubles as the "through current month" baseline.
+  const cumProjectedByMonth = new Map(
+    results
+      .filter((r) => r.plan.kind !== "past" && !r.error)
+      .map((r) => [r.plan.month, num(r.payload.ProjectedTotal)] as const)
+  );
 
-  // Past M:    from=M-start, to=M-end,            forecast_until=today        → AnalysisPeriodTotal = actual M revenue
-  // Current M: from=M-start, to=yesterday or M-1, forecast_until=M-end        → AnalysisPeriodTotal = MTD, ProjectedTotal = full-month estimate
-  // Future M:  cumulative from current-month-start through M-end; projected M = cumThruM - cumThruPrevM
-  //
-  // For 6 months we issue: 3 past + 1 current + 2 future-cumulative = 6 calls in parallel.
-  // The current-month call doubles as the "cumulative through current month" baseline.
-
-  type CallPlan =
-    | { kind: "past"; month: string; args: Record<string, string> }
-    | { kind: "current"; month: string; args: Record<string, string> }
-    | { kind: "future"; month: string; args: Record<string, string> };
-
-  const plans: CallPlan[] = months.map((m): CallPlan => {
-    const [yStr, monStr] = m.split("-");
-    const y = parseInt(yStr);
-    const mon = parseInt(monStr);
-    const mStart = `${m}-01`;
-    const mEnd = `${m}-${String(lastDayOfMonth(y, mon)).padStart(2, "0")}`;
-    const isCurrent = y === today.year && mon === today.month;
-    const isFuture = y > today.year || (y === today.year && mon > today.month);
-
-    if (isCurrent) {
-      // On the 1st of the month, yesterday is in the prior month — clamp to mStart
-      // so from <= to. The MCP may still error on day 1 (no MTD data); a zero slot is fine.
-      const toDate = yesterdayIso < mStart ? mStart : yesterdayIso;
-      return {
-        kind: "current",
-        month: m,
-        args: { from_date: mStart, to_date: toDate, forecast_until_date: mEnd },
-      };
-    }
-    if (isFuture) {
-      const toDate = yesterdayIso < currentMonthStart ? currentMonthStart : yesterdayIso;
-      return {
-        kind: "future",
-        month: m,
-        args: { from_date: currentMonthStart, to_date: toDate, forecast_until_date: mEnd },
-      };
-    }
-    return {
-      kind: "past",
-      month: m,
-      args: { from_date: mStart, to_date: mEnd, forecast_until_date: todayIso },
-    };
-  });
-
-  let results;
-  try {
-    results = await Promise.all(
-      plans.map(async (plan) => {
-        const r = await callTool("forecast", plan.args);
-        const text = r.content
-          .map((c) => c.text ?? "")
-          .join("\n")
-          .trim();
-        console.log(
-          `[forecast] month=${plan.month} kind=${plan.kind} args=${JSON.stringify(plan.args)} text=${text.slice(0, 300)}`
-        );
-        return { plan, text, isError: r.isError === true, payload: parsePayload(text) };
-      })
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    return new Response(JSON.stringify({ error: `MCP call failed: ${msg}` }), {
-      status: 502,
-      headers: { "Content-Type": "application/json" },
-    });
-  }
-
-  // Index cumulative ProjectedTotals by month for the future-diff computation.
-  // The current-month plan's ProjectedTotal also serves as the baseline ("through current month").
-  const cumProjectedByMonth = new Map<string, number>();
-  for (const r of results) {
-    if (r.plan.kind === "current" || r.plan.kind === "future") {
-      cumProjectedByMonth.set(r.plan.month, num(r.payload.ProjectedTotal));
-    }
-  }
-
-  const forecastMonths: ForecastMonth[] = results.map((r, i) => {
-    const { plan, text, payload, isError } = r;
-    const calculatedAt =
-      typeof payload.CalculatedAt === "string"
-        ? payload.CalculatedAt
-        : new Date().toISOString();
-    const dailyAverage = num(payload.DailyAverage);
-    const adjustments = extractAdjustments(payload.Notes);
-
-    let observed = 0;
-    let projected = 0;
-
-    if (isError) {
-      // Tool errored for this slot — leave zeros, raw text surfaces via debug
-    } else if (plan.kind === "past") {
-      // Past full month: observed = AnalysisPeriodTotal; projected equals it (no extrapolation).
-      observed = num(payload.AnalysisPeriodTotal);
-      projected = observed;
-    } else if (plan.kind === "current") {
-      observed = num(payload.AnalysisPeriodTotal); // MTD
-      projected = num(payload.ProjectedTotal); // full-month forecast
-    } else {
-      // Future: projected = cumulative through this month - cumulative through prior month.
-      // The prior cumulative is either the previous future month's plan or the current month's plan.
-      const prevMonth = months[i - 1];
-      const prevCum = cumProjectedByMonth.get(prevMonth) ?? 0;
-      const thisCum = num(payload.ProjectedTotal);
-      projected = Math.max(0, thisCum - prevCum);
-      observed = 0;
-    }
-
-    const month: ForecastMonth = {
-      month: plan.month,
-      observed,
-      dailyAverage,
-      projected,
-      adjustments,
-      calculatedAt,
-    };
-    if (debug) month.rawText = text;
-    return month;
-  });
+  const forecastMonths = results.map((r, i) => toMonth(r, i, months, cumProjectedByMonth, debug));
 
   const totals = {
     observed: forecastMonths.reduce((s, m) => s + m.observed, 0),

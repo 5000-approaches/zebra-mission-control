@@ -14,14 +14,11 @@ vi.mock("next/link", () => ({
 }));
 
 vi.mock("lucide-react", () => ({
-  Home: () => null,
   Settings: () => null,
   X: () => null,
   LogOut: () => null,
   MessageSquare: () => null,
   BarChart2: () => null,
-  LineChart: () => null,
-  Folder: () => null,
 }));
 
 function flatten(node: unknown, depth = 0): string {
@@ -46,21 +43,21 @@ function flatten(node: unknown, depth = 0): string {
 }
 
 describe("NAV_SECTIONS structure", () => {
-  it("has four sections", () => {
-    expect(NAV_SECTIONS).toHaveLength(4);
+  it("has exactly three sections: agent, PowerOffice, Admin", () => {
+    expect(NAV_SECTIONS).toHaveLength(3);
+    expect(NAV_SECTIONS.map((s) => s.heading)).toEqual([null, "PowerOffice", "Admin"]);
   });
 
-  it("first section has no heading and contains Home", () => {
+  it("first section has no heading and links the Zebra Agent at /", () => {
     expect(NAV_SECTIONS[0].heading).toBeNull();
-    expect(NAV_SECTIONS[0].items.some((i) => i.href === "/")).toBe(true);
+    expect(NAV_SECTIONS[0].items).toHaveLength(1);
+    expect(NAV_SECTIONS[0].items[0]).toMatchObject({ href: "/", label: "Zebra Agent" });
   });
 
-  it("Workspace section contains Forecast Agent and Forecast", () => {
-    const ws = NAV_SECTIONS.find((s) => s.heading === "Workspace");
-    expect(ws).toBeDefined();
-    const hrefs = ws!.items.map((i) => i.href);
-    expect(hrefs).toContain("/agent");
-    expect(hrefs).toContain("/forecast");
+  it("PowerOffice section contains only Forecast", () => {
+    const po = NAV_SECTIONS.find((s) => s.heading === "PowerOffice");
+    expect(po).toBeDefined();
+    expect(po!.items.map((i) => i.href)).toEqual(["/forecast"]);
   });
 
   it("Admin section contains Settings", () => {
@@ -69,22 +66,25 @@ describe("NAV_SECTIONS structure", () => {
     expect(admin!.items.some((i) => i.href === "/settings")).toBe(true);
   });
 
-  it("every nav item has href, label, and icon", () => {
+  it("no Workspace, Delivery, projects, agent or billable entries remain", () => {
+    const headings = NAV_SECTIONS.map((s) => s.heading);
+    expect(headings).not.toContain("Workspace");
+    expect(headings).not.toContain("Delivery");
+    const hrefs = NAV_SECTIONS.flatMap((s) => s.items.map((i) => i.href));
+    expect(hrefs).not.toContain("/projects");
+    expect(hrefs).not.toContain("/billable-forecast");
+    expect(hrefs).not.toContain("/agent");
+  });
+
+  it("every nav item has href, label, and icon and none is disabled", () => {
     for (const section of NAV_SECTIONS) {
       for (const item of section.items) {
         expect(item.href).toBeTruthy();
         expect(item.label).toBeTruthy();
         expect(item.icon).toBeTruthy();
+        expect(item.disabled).toBeFalsy();
       }
     }
-  });
-
-  it("billable-forecast item is disabled with Soon badge", () => {
-    const ws = NAV_SECTIONS.find((s) => s.heading === "Workspace");
-    const item = ws!.items.find((i) => i.href === "/billable-forecast");
-    expect(item).toBeDefined();
-    expect(item!.disabled).toBe(true);
-    expect(item!.badge).toBe("Soon");
   });
 });
 
@@ -115,13 +115,13 @@ describe("NavLink rendering", () => {
 
   it("does not render badge span when badge is absent", () => {
     const el = NavLink({
-      item: { href: "/agent", label: "Forecast Agent", icon: IconStub },
+      item: { href: "/", label: "Zebra Agent", icon: IconStub },
       active: false,
       onClose: noop,
     });
     const text = flatten(el);
     expect(text).not.toContain("Soon");
-    expect(text).toContain("Forecast Agent");
+    expect(text).toContain("Zebra Agent");
   });
 
   it("applies disabled styles when disabled is true", () => {

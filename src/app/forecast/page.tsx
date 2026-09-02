@@ -73,10 +73,20 @@ function MonthCard({ data, kind }: { data: ForecastMonth; kind: CardKind }) {
           {headerLabel}
         </div>
       </div>
-      <div className="text-4xl font-bold" style={{ color: bigColor }}>
-        {fmt(data.projected)} <span className="text-lg font-normal opacity-60">NOK</span>
-      </div>
-      {kind === "current" && (
+      {data.error ? (
+        <div
+          data-testid="month-card-error"
+          className="rounded-lg px-3 py-2 text-sm font-medium"
+          style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }}
+        >
+          No data: {data.error}
+        </div>
+      ) : (
+        <div className="text-4xl font-bold" style={{ color: bigColor }}>
+          {fmt(data.projected)} <span className="text-lg font-normal opacity-60">NOK</span>
+        </div>
+      )}
+      {kind === "current" && !data.error && (
         <div className="flex flex-col gap-1.5 text-sm" style={{ color: "var(--page-text)" }}>
           <div className="flex justify-between items-center">
             <span className="flex items-center gap-2">
@@ -94,7 +104,7 @@ function MonthCard({ data, kind }: { data: ForecastMonth; kind: CardKind }) {
           </div>
         </div>
       )}
-      {kind === "future" && (
+      {kind === "future" && !data.error && (
         <div className="text-xs opacity-60" style={{ color: "var(--page-text)" }}>
           Not earned yet — extrapolated from this month&apos;s daily run rate, less known
           adjustments.
@@ -208,7 +218,7 @@ function ForecastChart({
                 fill="var(--page-text)"
                 opacity={0.8}
               >
-                {fmtCompact(m.projected)}
+                {m.error ? "no data" : fmtCompact(m.projected)}
               </text>
               {/* Earned sub-label for current month, shown below the projected total */}
               {kind === "current" && earnedH > 0 && m.observed !== m.projected && (

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { Home, Settings, X, LogOut, MessageSquare, BarChart2, LineChart, Folder } from "lucide-react";
+import { Settings, X, LogOut, MessageSquare, BarChart2 } from "lucide-react";
 import DeployBadge from "./DeployBadge";
 
 type NavItem = {
@@ -22,21 +22,11 @@ type NavSection = {
 export const NAV_SECTIONS: NavSection[] = [
   {
     heading: null,
-    items: [{ href: "/", label: "Home", icon: Home }],
+    items: [{ href: "/", label: "Zebra Agent", icon: MessageSquare }],
   },
   {
-    heading: "Workspace",
-    items: [
-      { href: "/agent", label: "Forecast Agent", icon: MessageSquare },
-      { href: "/forecast", label: "Forecast", icon: BarChart2 },
-      { href: "/billable-forecast", label: "Billable Forecast", icon: LineChart, disabled: true, badge: "Soon" },
-    ],
-  },
-  {
-    heading: "Delivery",
-    items: [
-      { href: "/projects", label: "Projects", icon: Folder },
-    ],
+    heading: "PowerOffice",
+    items: [{ href: "/forecast", label: "Forecast", icon: BarChart2 }],
   },
   {
     heading: "Admin",

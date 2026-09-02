@@ -3,11 +3,25 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const mockFetch = vi.fn();
 vi.stubGlobal("fetch", mockFetch);
 
+vi.mock("@/lib/api-auth", () => ({ requireSession: vi.fn() }));
+
+import { requireSession } from "@/lib/api-auth";
 import { GET, PATCH } from "../route";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.mocked(requireSession).mockResolvedValue(null);
   vi.stubEnv("VERCEL_ADMIN_TOKEN", "test-token");
+});
+
+describe("auth guard", () => {
+  it("GET and PATCH return 401 without a session and never touch Vercel", async () => {
+    vi.mocked(requireSession).mockResolvedValue(Response.json({ error: "Unauthorized" }, { status: 401 }));
+    expect((await GET()).status).toBe(401);
+    const req = new Request("http://localhost/", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: "x" }) });
+    expect((await PATCH(req)).status).toBe(401);
+    expect(mockFetch).not.toHaveBeenCalled();
+  });
 });
 
 describe("GET /api/settings/integrations/poweroffice", () => {

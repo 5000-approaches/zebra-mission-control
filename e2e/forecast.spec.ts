@@ -1,16 +1,43 @@
 import { test, expect } from "@playwright/test";
 
-test("forecast agent page loads with chat input", async ({ page }) => {
-  await page.goto("/agent", { waitUntil: "domcontentloaded" });
-  await expect(page.locator("h1")).toContainText("Forecast Agent", { timeout: 10_000 });
+test("home page is the Zebra Agent chat with a greeting", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  await expect(page.locator("h1")).toContainText("Hello", { timeout: 10_000 });
+  await expect(page.getByText("Zebra Agent", { exact: false }).first()).toBeAttached();
   await expect(page.locator("textarea")).toBeAttached({ timeout: 5_000 });
   await expect(page.locator('button[type="submit"]')).toBeAttached({ timeout: 5_000 });
 });
 
-test("sidebar shows Forecast Agent link under Workspace", async ({ page }) => {
-  await page.goto("/agent", { waitUntil: "domcontentloaded" });
-  const link = page.locator('a[href="/agent"]', { hasText: "Forecast Agent" });
+test("sidebar shows Zebra Agent link at / and Forecast under PowerOffice", async ({ page }) => {
+  await page.goto("/", { waitUntil: "domcontentloaded" });
+  const link = page.locator('a[href="/"]', { hasText: "Zebra Agent" });
   await expect(link.first()).toBeAttached({ timeout: 10_000 });
+  await expect(page.locator("aside").getByText("PowerOffice", { exact: true })).toBeAttached();
+  await expect(page.locator('a[href="/forecast"]', { hasText: "Forecast" }).first()).toBeAttached();
+  await expect(page.locator('a[href="/projects"]')).toHaveCount(0);
+  await expect(page.locator('a[href="/billable-forecast"]')).toHaveCount(0);
+});
+
+test("old /agent url redirects to the home page", async ({ page }) => {
+  await page.goto("/agent", { waitUntil: "domcontentloaded" });
+  await expect(page).toHaveURL(/\/$/, { timeout: 10_000 });
+  await expect(page.locator("h1")).toContainText("Hello", { timeout: 10_000 });
+});
+
+test("forecast page shows a per-month error instead of 0 NOK when the tool fails", async ({ page }) => {
+  const withError = {
+    ...MOCK_FORECAST,
+    months: MOCK_FORECAST.months.map((m, i) =>
+      i >= 3 ? { ...m, observed: 0, projected: 0, error: "Not enough booked days yet this month" } : m
+    ),
+  };
+  await page.route("/api/forecast", async (route) => {
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(withError) });
+  });
+  await page.goto("/forecast", { waitUntil: "domcontentloaded" });
+  const errors = page.locator('[data-testid="month-card-error"]');
+  await expect(errors).toHaveCount(3, { timeout: 10_000 });
+  await expect(errors.first()).toContainText("Not enough booked days");
 });
 
 const MOCK_FORECAST = {
@@ -66,7 +93,7 @@ test("submitting a question streams AI response into chat", async ({ page }) => 
     });
   });
 
-  await page.goto("/agent", { waitUntil: "load" });
+  await page.goto("/", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
   await page.fill("textarea","What is our billable forecast for April?");
@@ -94,7 +121,7 @@ test("assistant response renders markdown as HTML (headings, tables, bold)", asy
     });
   });
 
-  await page.goto("/agent", { waitUntil: "load" });
+  await page.goto("/", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
   await page.fill("textarea","What's the July forecast?");
@@ -127,7 +154,7 @@ test("tool errors render as a collapsible details block", async ({ page }) => {
     });
   });
 
-  await page.goto("/agent", { waitUntil: "load" });
+  await page.goto("/", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
   await page.fill("textarea","Forecast for 2050?");
