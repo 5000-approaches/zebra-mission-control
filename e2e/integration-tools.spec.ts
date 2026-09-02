@@ -5,8 +5,9 @@ const MOCK_TOOLS = {
     {
       id: "poweroffice",
       label: "PowerOffice",
+      howToCombine: "Find a project first, then ask for its forecast.",
       tools: [
-        { name: "forecast", description: "Build a billable forecast" },
+        { name: "forecast", description: "Build a billable forecast", friendlyName: "Revenue forecast", purpose: "Estimates what a period will bill." },
         { name: "list_invoices", description: "List invoices for a period" },
       ],
     },
@@ -23,38 +24,52 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("forecast chat page shows available tools count and lists tools when expanded", async ({ page }) => {
+test("agent home page lists each MCP server with its tools in plain language", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
-  await page.goto("/agent", { waitUntil: "domcontentloaded" });
+  await page.goto("/", { waitUntil: "domcontentloaded" });
 
-  const pill = page.getByTestId("integration-tools-list").getByRole("button");
-  await expect(pill).toContainText("Available tools (2)", { timeout: 10_000 });
+  const list = page.getByTestId("integration-tools-list");
+  const server = list.getByTestId("integration-server").first();
+  await expect(server).toContainText("PowerOffice", { timeout: 10_000 });
+  await expect(server).toContainText("2 tools");
 
-  await pill.click();
+  await server.locator("summary").click();
 
   const items = page.getByTestId("integration-tool");
   await expect(items).toHaveCount(2);
+  await expect(items.first()).toContainText("Revenue forecast");
+  await expect(items.first()).toContainText("Estimates what a period will bill.");
   await expect(items.first()).toContainText("forecast");
-  await expect(items.first()).toContainText("Build a billable forecast");
+  await expect(items.nth(1)).toContainText("list_invoices");
+  await expect(server).toContainText("Find a project first");
 
   await page.screenshot({ path: "e2e/screenshots/agent-tools-expanded.png" });
 });
 
-test("settings page shows tools list inside PowerOffice card when expanded", async ({ page }) => {
+test("settings page shows the PowerOffice tools inside its card when expanded", async ({ page }) => {
+  await page.route("**/api/mcp-servers", async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ servers: [{ id: "poweroffice", name: "PowerOffice", url: "https://example.test/mcp", headerName: "x-functions-key", builtIn: true, keyMasked: "••••ab12" }] }),
+    });
+  });
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/settings", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
-  // The card uses a single root <button> wrapping the title + chevron.
-  // Use getByText then locate the closest <button> to be robust to button labels.
   await page.getByText("PowerOffice MCP", { exact: true }).first().click();
-
   await expect(page.getByText("Available tools")).toBeVisible({ timeout: 10_000 });
 
-  const items = page.getByTestId("integration-tool");
+  const card = page.getByTestId("integration-server").first();
+  await expect(card).toContainText("PowerOffice");
+  await card.locator("summary").click();
+  const items = card.getByTestId("integration-tool");
   await expect(items).toHaveCount(2);
   await expect(items.nth(1)).toContainText("list_invoices");
-  await expect(items.nth(1)).toContainText("List invoices for a period");
+
+  await expect(page.getByTestId("mcp-servers-card")).toContainText("MCP servers");
+  await expect(page.getByTestId("mcp-server-row")).toHaveCount(1);
 
   await page.screenshot({ path: "e2e/screenshots/settings-tools-embedded.png" });
 });

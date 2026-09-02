@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { requireSession } from "@/lib/api-auth";
 
-const PROJECT_ID = "prj_HZ7O1JQbLkcGcjsOh8KrluX3RG6r";
+const PROJECT_ID = process.env.VERCEL_PROJECT_ID || "prj_HZ7O1JQbLkcGcjsOh8KrluX3RG6r";
 const ENV_IDS = {
   url: "PAZUZkARfkuvSUBM",
   key: "jyQoOo8x6T4AdCxA",
@@ -36,6 +37,8 @@ async function writeEnvVar(envId: string, value: string): Promise<boolean> {
 }
 
 export async function GET() {
+  const denied = await requireSession();
+  if (denied) return denied;
   const [url, key] = await Promise.all([
     readEnvVar(ENV_IDS.url),
     readEnvVar(ENV_IDS.key),
@@ -44,6 +47,8 @@ export async function GET() {
 }
 
 export async function PATCH(req: Request) {
+  const denied = await requireSession();
+  if (denied) return denied;
   let body: { url?: string; key?: string };
   try {
     body = await req.json();
