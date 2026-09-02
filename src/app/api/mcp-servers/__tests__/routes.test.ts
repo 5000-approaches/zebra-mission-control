@@ -27,8 +27,8 @@ import { GET, POST } from "../route";
 import { PATCH, DELETE } from "../[id]/route";
 import { POST as REFRESH } from "../[id]/refresh/route";
 
-const PO: McpServerConfig = { id: "poweroffice", name: "PowerOffice", url: "https://po", headerName: "x-functions-key", key: "po-key-1234", builtIn: true };
-const HUB: McpServerConfig = { id: "hubspot", name: "HubSpot", url: "https://hub", headerName: "Authorization", key: "hub-key-5678", builtIn: false };
+const PO: McpServerConfig = { id: "poweroffice", name: "PowerOffice", url: "https://po", headerName: "x-functions-key", key: "po-key-1234" };
+const HUB: McpServerConfig = { id: "hubspot", name: "HubSpot", url: "https://hub", headerName: "Authorization", key: "hub-key-5678" };
 
 function req(method: string, body?: unknown) {
   return new Request("http://localhost/api/mcp-servers", {
@@ -65,7 +65,7 @@ describe("GET /api/mcp-servers", () => {
   it("lists servers with masked keys", async () => {
     const body = await (await GET()).json();
     expect(body.servers).toHaveLength(2);
-    expect(body.servers[0]).toMatchObject({ id: "poweroffice", builtIn: true, keyMasked: "••••1234" });
+    expect(body.servers[0]).toEqual({ id: "poweroffice", name: "PowerOffice", url: "https://po", headerName: "x-functions-key", keyMasked: "••••1234" });
     expect(JSON.stringify(body)).not.toContain("po-key");
   });
 });
@@ -75,7 +75,8 @@ describe("POST /api/mcp-servers", () => {
     const res = await POST(req("POST", { name: "Sales CRM", url: "https://crm.example.com/mcp", key: "crm-key-9999" }));
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.server).toMatchObject({ id: "sales-crm", name: "Sales CRM", headerName: "x-functions-key", keyMasked: "••••9999", builtIn: false });
+    expect(body.server).toMatchObject({ id: "sales-crm", name: "Sales CRM", headerName: "x-functions-key", keyMasked: "••••9999" });
+    expect(body.server).not.toHaveProperty("builtIn");
     expect(body.tools).toEqual([{ name: "deals", description: "List deals" }]);
     expect(body.error).toBeUndefined();
     const saved = vi.mocked(saveServers).mock.calls[0][0];
@@ -90,7 +91,7 @@ describe("POST /api/mcp-servers", () => {
     expect((await POST(bad)).status).toBe(400);
   });
 
-  it("rejects duplicate ids, including the built-in", async () => {
+  it("rejects duplicate ids, PowerOffice included", async () => {
     expect((await POST(req("POST", { name: "HubSpot", url: "https://a.example.com", key: "k" }))).status).toBe(409);
     expect((await POST(req("POST", { name: "PowerOffice", url: "https://a.example.com", key: "k" }))).status).toBe(409);
     expect(saveServers).not.toHaveBeenCalled();
@@ -119,11 +120,12 @@ describe("POST /api/mcp-servers", () => {
     expect((await res.json()).error).toMatch(/text/i);
   });
 
-  it("always rejects the reserved poweroffice id, even when the built-in server is not configured", async () => {
+  it("lets a PowerOffice server be added again after it was removed (no reserved id)", async () => {
     vi.mocked(loadServers).mockResolvedValue([HUB]);
     const res = await POST(req("POST", { name: "PowerOffice", url: "https://a.example.com", key: "k" }));
-    expect(res.status).toBe(409);
-    expect(saveServers).not.toHaveBeenCalled();
+    expect(res.status).toBe(201);
+    expect((await res.json()).server).toMatchObject({ id: "poweroffice", name: "PowerOffice" });
+    expect(saveServers).toHaveBeenCalled();
   });
 });
 
@@ -141,8 +143,10 @@ describe("PATCH /api/mcp-servers/[id]", () => {
     expect((await PATCH(req("PATCH", { url: "ftp://x" }), params("hubspot"))).status).toBe(400);
   });
 
-  it("returns 400 for built-in and 404 for unknown servers", async () => {
-    expect((await PATCH(req("PATCH", { name: "x" }), params("poweroffice"))).status).toBe(400);
+  it("edits PowerOffice like any other server and returns 404 for unknown servers", async () => {
+    const res = await PATCH(req("PATCH", { name: "PowerOffice GO", url: "https://po/v2" }), params("poweroffice"));
+    expect(res.status).toBe(200);
+    expect((await res.json()).server).toMatchObject({ id: "poweroffice", name: "PowerOffice GO", url: "https://po/v2", keyMasked: "••••1234" });
     expect((await PATCH(req("PATCH", { name: "x" }), params("nope"))).status).toBe(404);
   });
 
@@ -205,8 +209,11 @@ describe("DELETE /api/mcp-servers/[id]", () => {
     expect((await DELETE(req("DELETE"), params("hubspot"))).status).toBe(200);
   });
 
-  it("returns 400 for built-in and 404 for unknown servers", async () => {
-    expect((await DELETE(req("DELETE"), params("poweroffice"))).status).toBe(400);
+  it("removes PowerOffice like any other server and returns 404 for unknown servers", async () => {
+    expect((await DELETE(req("DELETE"), params("poweroffice"))).status).toBe(200);
+    const saved = vi.mocked(saveServers).mock.calls[0][0];
+    expect(saved.map((s) => s.id)).toEqual(["hubspot"]);
+    expect(deleteEnvValue).toHaveBeenCalledWith("MCP_CATALOG_POWEROFFICE");
     expect((await DELETE(req("DELETE"), params("nope"))).status).toBe(404);
   });
 });

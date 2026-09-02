@@ -22,6 +22,7 @@ import {
   toPublic,
   slugifyId,
   validateServerInput,
+  powerOfficeFromEnv,
   _resetServerCache,
   type McpServerConfig,
 } from "@/lib/mcp-servers";
@@ -32,12 +33,32 @@ const STORED: McpServerConfig = {
   url: "https://hub.example.com/mcp",
   headerName: "Authorization",
   key: "Bearer abc1234",
-  builtIn: false,
 };
+
+const PO_SEED: McpServerConfig = {
+  id: "poweroffice",
+  name: "PowerOffice",
+  url: "https://po.example.com/mcp",
+  headerName: "x-functions-key",
+  key: "po-key-9999",
+  transport: "http",
+};
+
+/** Simulate the env store: MCP_SERVERS holds `servers`, the seed marker holds `marker`. */
+function stubStore(servers: string | null, marker: string | null = null) {
+  vi.mocked(getEnvValue).mockImplementation(async (key: string) => (key === "MCP_SERVERS" ? servers : marker));
+}
+
+function writtenServers(): Array<Record<string, unknown>> {
+  const call = vi.mocked(setEnvValue).mock.calls.find(([k]) => k === "MCP_SERVERS");
+  return call ? (JSON.parse(call[1] as string) as Array<Record<string, unknown>>) : [];
+}
 
 beforeEach(() => {
   _resetServerCache();
   vi.clearAllMocks();
+  vi.mocked(setEnvValue).mockReset().mockResolvedValue(undefined);
+  vi.mocked(getEnvValue).mockReset().mockResolvedValue(null);
   vi.stubEnv("POWEROFFICE_MCP_URL", "https://po.example.com/mcp");
   vi.stubEnv("POWEROFFICE_MCP_KEY", "po-key-9999");
 });
@@ -46,81 +67,103 @@ afterEach(() => {
   vi.unstubAllEnvs();
 });
 
+describe("powerOfficeFromEnv", () => {
+  it("describes the PowerOffice server from the env vars", () => {
+    expect(powerOfficeFromEnv()).toEqual(PO_SEED);
+  });
+  it("returns null without a URL and an empty key without a key", () => {
+    vi.stubEnv("POWEROFFICE_MCP_KEY", "");
+    expect(powerOfficeFromEnv()).toMatchObject({ key: "" });
+    vi.stubEnv("POWEROFFICE_MCP_URL", "");
+    expect(powerOfficeFromEnv()).toBeNull();
+  });
+});
+
 describe("loadServers", () => {
-  it("returns the built-in PowerOffice server first, then stored servers", async () => {
-    vi.mocked(getEnvValue).mockResolvedValue(JSON.stringify([STORED]));
+  it("returns the stored list as-is when PowerOffice is already stored", async () => {
+    stubStore(JSON.stringify([STORED, { ...PO_SEED, name: "PowerOffice (edited)", url: "https://po2.example.com" }]));
     const servers = await loadServers();
-    expect(servers).toHaveLength(2);
-    expect(servers[0]).toEqual({
-      id: "poweroffice",
-      name: "PowerOffice",
-      url: "https://po.example.com/mcp",
-      headerName: "x-functions-key",
-      key: "po-key-9999",
-      builtIn: true,
-    });
-    expect(servers[1]).toEqual(STORED);
-    expect(getEnvValue).toHaveBeenCalledWith("MCP_SERVERS");
+    expect(servers.map((s) => s.id)).toEqual(["hubspot", "poweroffice"]);
+    expect(servers[1]).toMatchObject({ name: "PowerOffice (edited)", url: "https://po2.example.com" });
+    expect(setEnvValue).not.toHaveBeenCalled();
   });
 
-  it("omits the built-in server when PowerOffice env vars are missing", async () => {
+  it("seeds PowerOffice from the env vars into the stored list once and marks it seeded", async () => {
+    stubStore(JSON.stringify([STORED]));
+    const servers = await loadServers();
+    expect(servers.map((s) => s.id)).toEqual(["poweroffice", "hubspot"]);
+    expect(servers[0]).toEqual(PO_SEED);
+    expect(writtenServers().map((s) => s.id)).toEqual(["poweroffice", "hubspot"]);
+    expect(setEnvValue).toHaveBeenCalledWith("MCP_POWEROFFICE_SEEDED", "1");
+  });
+
+  it("does not re-seed after PowerOffice was removed (seed marker set)", async () => {
+    stubStore(JSON.stringify([STORED]), "1");
+    const servers = await loadServers();
+    expect(servers.map((s) => s.id)).toEqual(["hubspot"]);
+    expect(setEnvValue).not.toHaveBeenCalled();
+  });
+
+  it("still returns the seeded server for this request when persisting fails", async () => {
+    stubStore(null);
+    vi.mocked(setEnvValue).mockRejectedValue(new Error("VERCEL_ADMIN_TOKEN is not set"));
+    const servers = await loadServers();
+    expect(servers).toEqual([PO_SEED]);
+  });
+
+  it("returns only stored servers when PowerOffice env vars are missing", async () => {
     vi.stubEnv("POWEROFFICE_MCP_URL", "");
-    vi.mocked(getEnvValue).mockResolvedValue(null);
-    expect(await loadServers()).toEqual([]);
+    stubStore(JSON.stringify([STORED]));
+    expect(await loadServers()).toEqual([STORED]);
+    expect(setEnvValue).not.toHaveBeenCalled();
   });
 
   it("ignores malformed stored JSON and entries without required fields", async () => {
-    vi.mocked(getEnvValue).mockResolvedValue("not json");
-    expect(await loadServers()).toHaveLength(1);
-    vi.mocked(getEnvValue).mockResolvedValue(JSON.stringify([{ id: "x" }, STORED]));
-    _resetServerCache();
-    expect(await loadServers()).toHaveLength(2);
+    vi.stubEnv("POWEROFFICE_MCP_URL", "");
+    stubStore("not json");
+    expect(await loadServers()).toEqual([]);
+    stubStore(JSON.stringify([{ id: "x" }, STORED]));
+    expect(await loadServers()).toEqual([STORED]);
   });
 
-  it("loads stored servers with an empty key and keeps a valid transport", async () => {
-    vi.mocked(getEnvValue).mockResolvedValue(
-      JSON.stringify([{ ...STORED, key: "", transport: "sse" }, { ...STORED, id: "b", transport: "bogus" }])
-    );
+  it("loads stored servers with an empty key, keeps a valid transport and ignores unknown fields", async () => {
+    stubStore(JSON.stringify([{ ...STORED, key: "", transport: "sse", builtIn: true }, { ...STORED, id: "b", transport: "bogus" }]), "1");
     const servers = await loadServers();
-    expect(servers[1]).toMatchObject({ id: "hubspot", key: "", transport: "sse" });
-    expect(servers[2]).not.toHaveProperty("transport");
-  });
-
-  it("marks stored servers as not built-in even if the JSON claims otherwise", async () => {
-    vi.mocked(getEnvValue).mockResolvedValue(JSON.stringify([{ ...STORED, builtIn: true }]));
-    const servers = await loadServers();
-    expect(servers[1].builtIn).toBe(false);
+    expect(servers[0]).toEqual({ ...STORED, key: "", transport: "sse" });
+    expect(servers[1]).not.toHaveProperty("transport");
+    expect(servers[0]).not.toHaveProperty("builtIn");
   });
 });
 
 describe("saveServers", () => {
-  it("persists only non-built-in servers as JSON in MCP_SERVERS", async () => {
-    vi.mocked(getEnvValue).mockResolvedValue(null);
-    const builtIn = (await loadServers())[0];
-    await saveServers([builtIn, STORED]);
-    const { builtIn: _b, ...storedShape } = STORED;
-    void _b;
-    expect(setEnvValue).toHaveBeenCalledWith("MCP_SERVERS", JSON.stringify([storedShape]));
+  it("persists every server, PowerOffice included, as JSON in MCP_SERVERS", async () => {
+    await saveServers([PO_SEED, STORED]);
+    expect(setEnvValue).toHaveBeenCalledWith("MCP_SERVERS", JSON.stringify([PO_SEED, STORED]));
   });
 
   it("does not cache the stored list in this module (every load re-reads the env store)", async () => {
-    vi.mocked(getEnvValue).mockResolvedValue(null);
+    stubStore(JSON.stringify([PO_SEED]));
     await loadServers();
-    vi.mocked(getEnvValue).mockResolvedValue(JSON.stringify([STORED]));
+    stubStore(JSON.stringify([PO_SEED, STORED]));
     const servers = await loadServers();
     expect(servers.map((s) => s.id)).toEqual(["poweroffice", "hubspot"]);
-    expect(getEnvValue).toHaveBeenCalledTimes(2);
   });
 });
 
 describe("mutateServers", () => {
   it("re-reads the latest list inside the lock and writes the mutated result", async () => {
-    vi.mocked(getEnvValue).mockResolvedValue(JSON.stringify([STORED]));
+    stubStore(JSON.stringify([PO_SEED, STORED]));
     const other: McpServerConfig = { ...STORED, id: "other", name: "Other" };
     const result = await mutateServers((current) => [...current, other]);
     expect(result.map((s) => s.id)).toEqual(["poweroffice", "hubspot", "other"]);
-    const written = JSON.parse(vi.mocked(setEnvValue).mock.calls[0][1] as string) as Array<{ id: string }>;
-    expect(written.map((s) => s.id)).toEqual(["hubspot", "other"]);
+    expect(writtenServers().map((s) => s.id)).toEqual(["poweroffice", "hubspot", "other"]);
+  });
+
+  it("can remove PowerOffice like any other server", async () => {
+    stubStore(JSON.stringify([PO_SEED, STORED]));
+    const result = await mutateServers((current) => current.filter((s) => s.id !== "poweroffice"));
+    expect(result.map((s) => s.id)).toEqual(["hubspot"]);
+    expect(writtenServers().map((s) => s.id)).toEqual(["hubspot"]);
   });
 
   it("serializes concurrent mutations so neither update is lost", async () => {
@@ -138,7 +181,7 @@ describe("mutateServers", () => {
   });
 
   it("skips the write when the mutator returns the same list", async () => {
-    vi.mocked(getEnvValue).mockResolvedValue(JSON.stringify([STORED]));
+    stubStore(JSON.stringify([STORED]));
     await mutateServers((current) => current);
     expect(setEnvValue).not.toHaveBeenCalled();
   });
@@ -149,7 +192,7 @@ describe("toPublic", () => {
     const pub = toPublic(STORED);
     expect("key" in pub).toBe(false);
     expect(pub.keyMasked).toBe("••••1234");
-    expect(pub).toMatchObject({ id: "hubspot", name: "HubSpot", url: STORED.url, headerName: "Authorization", builtIn: false });
+    expect(pub).toEqual({ id: "hubspot", name: "HubSpot", url: STORED.url, headerName: "Authorization", keyMasked: "••••1234" });
   });
 
   it("masks short keys fully", () => {

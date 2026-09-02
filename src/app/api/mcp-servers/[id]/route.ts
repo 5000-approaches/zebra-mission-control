@@ -13,9 +13,7 @@ type RouteContext = { params: Promise<{ id: string }> };
 
 function findEditable(servers: McpServerConfig[], id: string): McpServerConfig | Response {
   const server = servers.find((s) => s.id === id);
-  if (!server) return jsonError("Server not found", 404);
-  if (server.builtIn) return jsonError("The built-in PowerOffice server is managed under PowerOffice MCP settings", 400);
-  return server;
+  return server ?? jsonError("Server not found", 404);
 }
 
 function originOf(url: string): string | null {

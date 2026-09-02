@@ -14,6 +14,12 @@ const MOCK_TOOLS = {
   ],
 };
 
+const MOCK_SERVERS = {
+  servers: [
+    { id: "poweroffice", name: "PowerOffice", url: "https://example.test/mcp", headerName: "x-functions-key", keyMasked: "••••ab12" },
+  ],
+};
+
 test.beforeEach(async ({ page }) => {
   await page.route("**/api/integrations/tools", async (route) => {
     await route.fulfill({
@@ -46,30 +52,38 @@ test("agent home page lists each MCP server with its tools in plain language", a
   await page.screenshot({ path: "e2e/screenshots/agent-tools-expanded.png" });
 });
 
-test("settings page shows the PowerOffice tools inside its card when expanded", async ({ page }) => {
+test("settings page lists PowerOffice as an editable MCP server and shows its tools", async ({ page }) => {
   await page.route("**/api/mcp-servers", async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ servers: [{ id: "poweroffice", name: "PowerOffice", url: "https://example.test/mcp", headerName: "x-functions-key", builtIn: true, keyMasked: "••••ab12" }] }),
-    });
+    await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(MOCK_SERVERS) });
   });
   await page.setViewportSize({ width: 1280, height: 800 });
   await page.goto("/settings", { waitUntil: "load" });
   await page.waitForLoadState("networkidle");
 
-  await page.getByText("PowerOffice MCP", { exact: true }).first().click();
-  await expect(page.getByText("Available tools")).toBeVisible({ timeout: 10_000 });
+  // No separate PowerOffice card any more: it is a regular row with edit and remove controls.
+  await expect(page.getByText("PowerOffice MCP", { exact: true })).toHaveCount(0);
+  const card = page.getByTestId("mcp-servers-card");
+  await expect(card).toContainText("MCP servers");
+  const row = page.getByTestId("mcp-server-row");
+  await expect(row).toHaveCount(1);
+  await expect(row.first()).toContainText("PowerOffice");
+  await expect(row.first()).not.toContainText("built-in");
+  await expect(row.first().getByRole("button", { name: "Edit" })).toBeVisible();
+  await expect(row.first().getByRole("button", { name: "Remove" })).toBeVisible();
+  await expect(row.first().getByRole("button", { name: "Refresh tools" })).toBeVisible();
 
-  const card = page.getByTestId("integration-server").first();
-  await expect(card).toContainText("PowerOffice");
-  await card.locator("summary").click();
-  const items = card.getByTestId("integration-tool");
+  await row.first().getByRole("button", { name: "Edit" }).click();
+  const form = page.getByTestId("mcp-server-form");
+  await expect(form).toBeVisible();
+  await expect(form.getByLabel("Friendly name")).toHaveValue("PowerOffice");
+  await expect(form.getByLabel("MCP URL")).toHaveValue("https://example.test/mcp");
+
+  const catalog = page.getByTestId("integration-server").first();
+  await expect(catalog).toContainText("PowerOffice");
+  await catalog.locator("summary").click();
+  const items = catalog.getByTestId("integration-tool");
   await expect(items).toHaveCount(2);
   await expect(items.nth(1)).toContainText("list_invoices");
-
-  await expect(page.getByTestId("mcp-servers-card")).toContainText("MCP servers");
-  await expect(page.getByTestId("mcp-server-row")).toHaveCount(1);
 
   await page.screenshot({ path: "e2e/screenshots/settings-tools-embedded.png" });
 });

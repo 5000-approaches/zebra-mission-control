@@ -1,7 +1,6 @@
 import { requireSession } from "@/lib/api-auth";
 import { listServerTools } from "@/lib/mcp-client";
 import {
-  BUILT_IN_ID,
   loadServers,
   mutateServers,
   slugifyId,
@@ -82,8 +81,7 @@ export async function POST(req: Request): Promise<Response> {
   if (!validated.ok) return jsonError(validated.error, 400);
 
   const id = slugifyId(validated.value.name);
-  if (id === BUILT_IN_ID) return jsonError(`The id "${id}" is reserved for the built-in PowerOffice server`, 409);
-  const server: McpServerConfig = { id, ...validated.value, builtIn: false };
+  const server: McpServerConfig = { id, ...validated.value };
 
   let duplicate = false;
   try {

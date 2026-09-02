@@ -1,5 +1,5 @@
 import { requireSessionOrApiSecret } from "@/lib/api-auth";
-import { listTools, callTool } from "@/lib/poweroffice-mcp";
+import { listTools, callTool, NO_POWEROFFICE_ERROR } from "@/lib/poweroffice-mcp";
 import { toDdMmYyyy } from "@/lib/forecast-dates";
 import { parseForecastEnvelope, type ForecastPayload } from "@/lib/forecast-envelope";
 
@@ -217,6 +217,7 @@ export async function GET(req: Request) {
     tools = await listTools();
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
+    if (msg === NO_POWEROFFICE_ERROR) return jsonError(msg, 501);
     return jsonError(`MCP tools/list failed: ${msg}`, 502);
   }
 
