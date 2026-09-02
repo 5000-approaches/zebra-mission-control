@@ -2,7 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
 vi.mock("@/lib/vercel-env", async () => {
   const actual = await vi.importActual<typeof import("@/lib/vercel-env")>("@/lib/vercel-env");
-  return { withKeyLock: actual.withKeyLock, getEnvValue: vi.fn(), setEnvValue: vi.fn() };
+  const getEnvValue = vi.fn();
+  const setEnvValue = vi.fn();
+  // Test double for the locked read-modify-write, expressed through the mocked read/write.
+  const updateEnvValue = async (key: string, updater: (c: string | null) => string | null) =>
+    actual.withKeyLock(key, async () => {
+      const current = (await getEnvValue(key)) as string | null;
+      const next = updater(current);
+      if (next !== null && next !== current) await setEnvValue(key, next);
+    });
+  return { withKeyLock: actual.withKeyLock, getEnvValue, setEnvValue, updateEnvValue };
 });
 
 import { getEnvValue, setEnvValue } from "@/lib/vercel-env";
@@ -66,6 +75,15 @@ describe("loadServers", () => {
     vi.mocked(getEnvValue).mockResolvedValue(JSON.stringify([{ id: "x" }, STORED]));
     _resetServerCache();
     expect(await loadServers()).toHaveLength(2);
+  });
+
+  it("loads stored servers with an empty key and keeps a valid transport", async () => {
+    vi.mocked(getEnvValue).mockResolvedValue(
+      JSON.stringify([{ ...STORED, key: "", transport: "sse" }, { ...STORED, id: "b", transport: "bogus" }])
+    );
+    const servers = await loadServers();
+    expect(servers[1]).toMatchObject({ id: "hubspot", key: "", transport: "sse" });
+    expect(servers[2]).not.toHaveProperty("transport");
   });
 
   it("marks stored servers as not built-in even if the JSON claims otherwise", async () => {
@@ -137,6 +155,11 @@ describe("toPublic", () => {
   it("masks short keys fully", () => {
     expect(toPublic({ ...STORED, key: "ab" }).keyMasked).toBe("••••");
   });
+  it("reports 'none' when the server has no key and keeps the transport", () => {
+    const pub = toPublic({ ...STORED, key: "", transport: "sse" });
+    expect(pub.keyMasked).toBe("none");
+    expect(pub.transport).toBe("sse");
+  });
 });
 
 describe("slugifyId", () => {
@@ -160,11 +183,21 @@ describe("validateServerInput", () => {
     expect(validateServerInput({ name: "a", url: "http://x.example.com", key: "k" })).toMatchObject({ ok: false });
     expect(validateServerInput({ name: "a", url: "not a url", key: "k" })).toMatchObject({ ok: false });
   });
-  it("rejects empty name or key and trims whitespace", () => {
+  it("rejects an empty name and trims whitespace", () => {
     expect(validateServerInput({ name: " ", url: "https://x.example.com", key: "k" })).toMatchObject({ ok: false, error: expect.stringContaining("name") });
-    expect(validateServerInput({ name: "a", url: "https://x.example.com", key: "" })).toMatchObject({ ok: false, error: expect.stringContaining("key") });
     const r = validateServerInput({ name: " A ", url: " https://x.example.com ", key: " k ", headerName: " X-Key " });
     expect(r).toEqual({ ok: true, value: { name: "A", url: "https://x.example.com", key: "k", headerName: "X-Key" } });
+  });
+  it("allows an empty or missing key (unauthenticated servers)", () => {
+    expect(validateServerInput({ name: "a", url: "https://x.example.com", key: "" })).toMatchObject({ ok: true, value: { key: "" } });
+    expect(validateServerInput({ name: "a", url: "https://x.example.com", key: "  " })).toMatchObject({ ok: true, value: { key: "" } });
+    expect(validateServerInput({ name: "a", url: "https://x.example.com" })).toMatchObject({ ok: true, value: { key: "" } });
+  });
+  it("accepts transport http or sse and rejects anything else", () => {
+    expect(validateServerInput({ name: "a", url: "https://x.example.com", key: "", transport: "sse" })).toMatchObject({ ok: true, value: { transport: "sse" } });
+    expect(validateServerInput({ name: "a", url: "https://x.example.com", key: "", transport: "http" })).toMatchObject({ ok: true, value: { transport: "http" } });
+    expect(validateServerInput({ name: "a", url: "https://x.example.com", key: "", transport: "grpc" })).toMatchObject({ ok: false, error: expect.stringContaining("Connection type") });
+    expect(validateServerInput({ name: "a", url: "https://x.example.com", key: "" })).not.toHaveProperty("value.transport");
   });
   it("rejects header names with invalid characters", () => {
     expect(validateServerInput({ name: "a", url: "https://x.example.com", key: "k", headerName: "bad header" })).toMatchObject({ ok: false });

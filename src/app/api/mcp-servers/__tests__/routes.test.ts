@@ -158,6 +158,27 @@ describe("PATCH /api/mcp-servers/[id]", () => {
     expect(moved.status).toBe(200);
   });
 
+  it("lets a server without a stored key change its URL freely", async () => {
+    vi.mocked(loadServers).mockResolvedValue([PO, { ...HUB, key: "" }]);
+    const res = await PATCH(req("PATCH", { url: "https://elsewhere.example.com/sse" }), params("hubspot"));
+    expect(res.status).toBe(200);
+    expect((await res.json()).server).toMatchObject({ url: "https://elsewhere.example.com/sse", keyMasked: "none" });
+  });
+
+  it("stores the transport on add and edit", async () => {
+    const created = await POST(req("POST", { name: "Gurobot", url: "https://g.example.com/sse", key: "", transport: "sse" }));
+    expect(created.status).toBe(201);
+    expect((await created.json()).server).toMatchObject({ id: "gurobot", transport: "sse", keyMasked: "none" });
+    const savedAdd = vi.mocked(saveServers).mock.calls[0][0];
+    expect(savedAdd.find((s) => s.id === "gurobot")).toMatchObject({ transport: "sse", key: "" });
+
+    vi.mocked(saveServers).mockClear();
+    const edited = await PATCH(req("PATCH", { transport: "http" }), params("hubspot"));
+    expect(edited.status).toBe(200);
+    expect((await edited.json()).server).toMatchObject({ transport: "http" });
+    expect((await PATCH(req("PATCH", { transport: "carrier-pigeon" }), params("hubspot"))).status).toBe(400);
+  });
+
   it("refreshes the server's cached tools after a successful edit and ignores refresh failures", async () => {
     vi.mocked(listServerTools).mockRejectedValue(new Error("down"));
     const res = await PATCH(req("PATCH", { name: "Renamed" }), params("hubspot"));

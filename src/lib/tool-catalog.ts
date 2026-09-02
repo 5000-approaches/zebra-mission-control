@@ -11,6 +11,8 @@ export type ServerCatalog = {
   toolNames: string[];
   tools: ToolSummary[];
   howToCombine: string;
+  /** Set when Claude could not produce summaries and the first-sentence fallback was used. */
+  generationError?: string;
 };
 
 const CATALOG_MODEL = "claude-opus-5";
@@ -118,8 +120,9 @@ export async function generateCatalog(server: McpServerConfig, tools: McpTool[])
   let generated: GeneratedShape;
   try {
     generated = await askClaude(server, tools);
-  } catch {
-    return fallbackCatalog(server, tools);
+  } catch (err) {
+    const generationError = err instanceof Error ? err.message : String(err);
+    return { ...fallbackCatalog(server, tools), generationError };
   }
   const catalog = mergeGenerated(server, tools, generated);
   await persist(catalog);

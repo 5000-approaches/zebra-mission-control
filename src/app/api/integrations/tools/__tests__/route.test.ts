@@ -69,10 +69,27 @@ describe("GET /api/integrations/tools", () => {
     expect(getCatalog).not.toHaveBeenCalled();
   });
 
-  it("still returns tools when the catalog lookup throws", async () => {
+  it("still returns tools when the catalog lookup throws, and says why", async () => {
     vi.mocked(listAllTools).mockResolvedValue([{ server: pub, tools: [{ name: "a", description: "A.", inputSchema: {} }] }]);
     vi.mocked(getCatalog).mockRejectedValue(new Error("boom"));
     const body = (await (await GET()).json()) as ToolsApiResponse;
     expect(body.integrations[0].tools).toEqual([{ name: "a", description: "A." }]);
+    expect(body.integrations[0].catalogError).toBe("boom");
+  });
+
+  it("exposes the catalog's generationError as catalogError while still listing fallback summaries", async () => {
+    vi.mocked(listAllTools).mockResolvedValue([{ server: pub, tools: [{ name: "a", description: "A does things.", inputSchema: {} }] }]);
+    vi.mocked(getCatalog).mockResolvedValue({
+      serverId: "poweroffice",
+      generatedAt: "",
+      toolNames: ["a"],
+      tools: [{ name: "a", friendlyName: "a", purpose: "A does things." }],
+      howToCombine: "",
+      generationError: "ANTHROPIC_API_KEY invalid",
+    });
+    const body = (await (await GET()).json()) as ToolsApiResponse;
+    expect(body.integrations[0].catalogError).toBe("ANTHROPIC_API_KEY invalid");
+    expect(body.integrations[0].tools[0]).toMatchObject({ friendlyName: "a", purpose: "A does things." });
+    expect(body.integrations[0].howToCombine).toBeUndefined();
   });
 });
