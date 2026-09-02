@@ -13,11 +13,13 @@ import {
 import { generateCatalog } from "@/lib/tool-catalog";
 
 export const dynamic = "force-dynamic";
+// Tool discovery + catalog generation can exceed the Vercel default function limit.
+export const maxDuration = 60;
 
 export type ToolListItem = { name: string; description: string };
 export type DiscoveryResult = { tools: ToolListItem[]; error?: string };
 
-const BODY_FIELDS = ["name", "url", "key", "headerName"] as const;
+const BODY_FIELDS = ["name", "url", "key", "headerName", "transport"] as const;
 export type ServerBody = Partial<Record<(typeof BODY_FIELDS)[number], string>>;
 
 /** Discover a server's tools (fresh) and refresh its plain-language catalog. Never throws. */
@@ -75,6 +77,7 @@ export async function POST(req: Request): Promise<Response> {
     url: body.url ?? "",
     key: body.key ?? "",
     headerName: body.headerName,
+    transport: body.transport,
   });
   if (!validated.ok) return jsonError(validated.error, 400);
 
