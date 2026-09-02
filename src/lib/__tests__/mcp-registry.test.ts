@@ -13,8 +13,8 @@ import { loadServers, type McpServerConfig } from "@/lib/mcp-servers";
 import { listServerTools, callServerTool } from "@/lib/mcp-client";
 import { listAllTools, agentTools, callNamespacedTool, splitNamespacedName } from "@/lib/mcp-registry";
 
-const PO: McpServerConfig = { id: "poweroffice", name: "PowerOffice", url: "https://po", headerName: "x-functions-key", key: "k1", builtIn: true };
-const HUB: McpServerConfig = { id: "hubspot", name: "HubSpot", url: "https://hub", headerName: "Authorization", key: "k2", builtIn: false };
+const PO: McpServerConfig = { id: "poweroffice", name: "PowerOffice", url: "https://po", headerName: "x-functions-key", key: "k1" };
+const HUB: McpServerConfig = { id: "hubspot", name: "HubSpot", url: "https://hub", headerName: "Authorization", key: "k2" };
 
 beforeEach(() => {
   vi.clearAllMocks();

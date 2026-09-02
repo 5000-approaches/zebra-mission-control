@@ -16,23 +16,4 @@ test.describe("PR #6 — Mission Control cleanup", () => {
     await expect(page).toHaveURL(/\/auth/, { timeout: 10_000 });
   });
 
-  test("PowerOffice API GET returns url and key fields", async ({ page }) => {
-    const response = await page.goto("/api/settings/integrations/poweroffice", {
-      waitUntil: "domcontentloaded",
-    });
-    expect(response?.status()).toBe(200);
-    const body = await response?.json();
-    expect(body).toHaveProperty("url");
-    expect(body).toHaveProperty("key");
-  });
-
-  test("PowerOffice API PATCH rejects invalid JSON with 400", async ({ request }) => {
-    const response = await request.patch("/api/settings/integrations/poweroffice", {
-      data: "not json",
-      headers: { "Content-Type": "text/plain" },
-    });
-    expect(response.status()).toBe(400);
-    const body = await response.json();
-    expect(body.error).toBe("Invalid JSON");
-  });
 });

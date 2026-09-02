@@ -10,7 +10,6 @@ export type McpServerView = {
   name: string;
   url: string;
   headerName: string;
-  builtIn: boolean;
   keyMasked: string;
   transport?: "http" | "sse";
 };
@@ -173,14 +172,7 @@ function ServerRow({
       style={{ borderTop: "1px solid var(--page-border)", color: "var(--page-text)" }}
     >
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold flex items-center gap-2">
-          {server.name}
-          {server.builtIn && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: "var(--accent-lighter)", color: "var(--accent-darker)" }}>
-              built-in
-            </span>
-          )}
-        </p>
+        <p className="text-sm font-semibold">{server.name}</p>
         <p className="text-xs truncate" style={{ opacity: 0.55 }}>
           {server.url}
         </p>
@@ -192,16 +184,12 @@ function ServerRow({
       <button type="button" title="Refresh tools" aria-label="Refresh tools" onClick={onRefresh} disabled={busy} className={iconBtn} style={{ opacity: 0.7 }}>
         <RefreshCw size={14} />
       </button>
-      {!server.builtIn && (
-        <>
-          <button type="button" title="Edit" aria-label="Edit" onClick={onEdit} disabled={busy} className={iconBtn} style={{ opacity: 0.7 }}>
-            <Pencil size={14} />
-          </button>
-          <button type="button" title="Remove" aria-label="Remove" onClick={onRemove} disabled={busy} className={iconBtn} style={{ color: "#b91c1c" }}>
-            <Trash2 size={14} />
-          </button>
-        </>
-      )}
+      <button type="button" title="Edit" aria-label="Edit" onClick={onEdit} disabled={busy} className={iconBtn} style={{ opacity: 0.7 }}>
+        <Pencil size={14} />
+      </button>
+      <button type="button" title="Remove" aria-label="Remove" onClick={onRemove} disabled={busy} className={iconBtn} style={{ color: "#b91c1c" }}>
+        <Trash2 size={14} />
+      </button>
     </li>
   );
 }

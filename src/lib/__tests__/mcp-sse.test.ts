@@ -9,7 +9,6 @@ const SSE_SERVER: McpServerConfig = {
   url: "https://gurobot.example.com/sse",
   headerName: "x-functions-key",
   key: "",
-  builtIn: false,
 };
 
 type Sent = { url: string; body: Record<string, unknown> };

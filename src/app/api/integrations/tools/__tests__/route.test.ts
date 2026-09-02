@@ -14,8 +14,8 @@ import { loadServers, type McpServerConfig } from "@/lib/mcp-servers";
 import { getCatalog } from "@/lib/tool-catalog";
 import { GET, type ToolsApiResponse } from "../route";
 
-const PO: McpServerConfig = { id: "poweroffice", name: "PowerOffice", url: "https://po", headerName: "x", key: "k", builtIn: true };
-const pub = { id: "poweroffice", name: "PowerOffice", url: "https://po", headerName: "x", builtIn: true, keyMasked: "••••" };
+const PO: McpServerConfig = { id: "poweroffice", name: "PowerOffice", url: "https://po", headerName: "x", key: "k" };
+const pub = { id: "poweroffice", name: "PowerOffice", url: "https://po", headerName: "x", keyMasked: "••••" };
 
 beforeEach(() => {
   vi.clearAllMocks();

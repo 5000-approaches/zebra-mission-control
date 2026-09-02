@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { listTools, callTool, _resetToolCache } from "./poweroffice-mcp";
+
+vi.mock("./mcp-servers", async () => {
+  const actual = await vi.importActual<typeof import("./mcp-servers")>("./mcp-servers");
+  return { ...actual, loadServers: vi.fn() };
+});
+
+import { loadServers, type McpServerConfig } from "./mcp-servers";
+import { listTools, callTool, resolvePowerOfficeServer, NO_POWEROFFICE_ERROR, _resetToolCache } from "./poweroffice-mcp";
 
 const MCP_URL = "https://mcp.example.com/api";
 const MCP_KEY = "test-key";
@@ -33,14 +40,44 @@ function sseResponse(body: unknown) {
 
 beforeEach(() => {
   _resetToolCache();
+  vi.clearAllMocks();
   vi.stubEnv("POWEROFFICE_MCP_URL", MCP_URL);
   vi.stubEnv("POWEROFFICE_MCP_KEY", MCP_KEY);
+  // Default: nothing stored → the env-var fallback describes the server.
+  vi.mocked(loadServers).mockResolvedValue([]);
   vi.stubGlobal("fetch", vi.fn());
 });
 
 afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
+});
+
+describe("resolvePowerOfficeServer", () => {
+  const STORED_PO: McpServerConfig = { id: "poweroffice", name: "PowerOffice (edited)", url: "https://edited.example.com/mcp", headerName: "x-functions-key", key: "edited-key" };
+  const OTHER: McpServerConfig = { id: "other", name: "Other", url: "https://other.example.com/mcp", headerName: "Authorization", key: "Bearer x" };
+
+  it("prefers the stored server with id poweroffice over the env vars", async () => {
+    vi.mocked(loadServers).mockResolvedValue([OTHER, STORED_PO]);
+    expect(await resolvePowerOfficeServer()).toEqual(STORED_PO);
+  });
+
+  it("falls back to the first stored server that exposes a forecast tool", async () => {
+    vi.mocked(loadServers).mockResolvedValue([OTHER]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ result: { tools: [{ name: "forecast", description: "", inputSchema: {} }] } })));
+    expect(await resolvePowerOfficeServer()).toEqual(OTHER);
+  });
+
+  it("falls back to the env vars when no stored server fits", async () => {
+    vi.mocked(loadServers).mockResolvedValue([OTHER]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(jsonResponse({ result: { tools: [{ name: "deals", description: "", inputSchema: {} }] } })));
+    expect(await resolvePowerOfficeServer()).toMatchObject({ id: "poweroffice", url: MCP_URL, key: MCP_KEY });
+  });
+
+  it("throws a friendly error when nothing is configured", async () => {
+    vi.stubEnv("POWEROFFICE_MCP_URL", "");
+    await expect(resolvePowerOfficeServer()).rejects.toThrow(NO_POWEROFFICE_ERROR);
+  });
 });
 
 describe("listTools", () => {

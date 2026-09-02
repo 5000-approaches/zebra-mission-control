@@ -17,7 +17,7 @@ import { getCatalog, generateCatalog, catalogEnvKey, fallbackCatalog } from "@/l
 import type { McpServerConfig } from "@/lib/mcp-servers";
 import type { McpTool } from "@/lib/mcp-client";
 
-const SERVER: McpServerConfig = { id: "power-office", name: "PowerOffice", url: "https://po", headerName: "x", key: "k", builtIn: true };
+const SERVER: McpServerConfig = { id: "power-office", name: "PowerOffice", url: "https://po", headerName: "x", key: "k" };
 const TOOLS: McpTool[] = [
   { name: "forecast", description: "Calculate financial revenue forecast. Uses time tracking data.", inputSchema: {} },
   { name: "top_projects", description: "Retrieve the top projects by billable amount.", inputSchema: {} },

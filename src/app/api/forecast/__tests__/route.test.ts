@@ -1,7 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { callTool, listTools } from "@/lib/poweroffice-mcp";
+import { callTool, listTools, NO_POWEROFFICE_ERROR } from "@/lib/poweroffice-mcp";
 
 vi.mock("@/lib/poweroffice-mcp", () => ({
+  NO_POWEROFFICE_ERROR: "No PowerOffice MCP server configured — add one in Settings",
   listTools: vi.fn(),
   callTool: vi.fn(),
 }));
@@ -179,6 +180,13 @@ describe("GET /api/forecast", () => {
     vi.mocked(listTools).mockRejectedValue(new Error("connection refused"));
     const res = await GET(makeGet());
     expect(res.status).toBe(502);
+  });
+
+  it("returns 501 with a friendly message when no PowerOffice server is configured", async () => {
+    vi.mocked(listTools).mockRejectedValue(new Error(NO_POWEROFFICE_ERROR));
+    const res = await GET(makeGet());
+    expect(res.status).toBe(501);
+    expect((await res.json()).error).toBe("No PowerOffice MCP server configured — add one in Settings");
   });
 
   it("zeroes a month when MCP returns isError for that slot, without crashing the whole response", async () => {
