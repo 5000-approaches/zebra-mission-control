@@ -1,0 +1,25 @@
+---
+name: crud-resource
+description: Add Create / Read / Update / Delete on a resource
+keywords: [crud, create, read, update, delete, resource, endpoint]
+required:
+  - id: list-endpoint
+    description: GET /{name} list endpoint
+    check: regex
+    pattern: '(app|router)\.get\s*\(\s*[''"]/{name}[''"/]'
+  - id: post-endpoint
+    description: POST /{name} create endpoint
+    check: regex
+    pattern: '(app|router)\.post\s*\(\s*[''"]/{name}[''"/]'
+  - id: patch-endpoint
+    description: PATCH /{name}/:id update endpoint
+    check: regex
+    pattern: '(app|router)\.(patch|put)\s*\(\s*[''"]/{name}/'
+  - id: delete-endpoint
+    description: DELETE /{name}/:id endpoint
+    check: regex
+    pattern: '(app|router)\.delete\s*\(\s*[''"]/{name}/'
+  - id: migration-file
+    description: Schema migration file for {name}
+    check: file-exists
+    pattern: 'migrations/*{name}*'

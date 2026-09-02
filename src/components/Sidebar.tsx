@@ -3,13 +3,15 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { Home, Settings, X, LogOut, MessageSquare, BarChart2, LineChart } from "lucide-react";
+import { Settings, X, LogOut, MessageSquare, BarChart2 } from "lucide-react";
 import DeployBadge from "./DeployBadge";
 
 type NavItem = {
   href: string;
   label: string;
   icon: React.ComponentType<{ size?: number; className?: string }>;
+  disabled?: boolean;
+  badge?: string;
 };
 
 type NavSection = {
@@ -20,15 +22,11 @@ type NavSection = {
 export const NAV_SECTIONS: NavSection[] = [
   {
     heading: null,
-    items: [{ href: "/", label: "Home", icon: Home }],
+    items: [{ href: "/", label: "Zebra Agent", icon: MessageSquare }],
   },
   {
-    heading: "Workspace",
-    items: [
-      { href: "/agent", label: "Forecast Agent", icon: MessageSquare },
-      { href: "/forecast", label: "Forecast", icon: BarChart2 },
-      { href: "/billable-forecast", label: "Billable Forecast", icon: LineChart },
-    ],
+    heading: "PowerOffice",
+    items: [{ href: "/forecast", label: "Forecast", icon: BarChart2 }],
   },
   {
     heading: "Admin",
@@ -36,7 +34,7 @@ export const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
-function NavLink({
+export function NavLink({
   item,
   active,
   onClose,
@@ -45,31 +43,42 @@ function NavLink({
   active: boolean;
   onClose: () => void;
 }) {
-  const { href, label, icon: Icon } = item;
+  const { href, label, icon: Icon, disabled, badge } = item;
   return (
     <Link
       href={href}
-      onClick={onClose}
+      onClick={disabled ? (e) => e.preventDefault() : onClose}
       className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
       style={{
         background: active ? "var(--sidebar-active-bg)" : "transparent",
-        color: active ? "#ffffff" : "rgba(255,255,255,0.65)",
+        color: disabled ? "rgba(255,255,255,0.3)" : active ? "#ffffff" : "rgba(255,255,255,0.65)",
+        opacity: disabled ? 0.5 : 1,
+        cursor: disabled ? "default" : undefined,
+        pointerEvents: disabled ? "none" : undefined,
       }}
       onMouseEnter={(e) => {
-        if (!active) {
+        if (!active && !disabled) {
           e.currentTarget.style.background = "var(--sidebar-hover)";
           e.currentTarget.style.color = "#ffffff";
         }
       }}
       onMouseLeave={(e) => {
-        if (!active) {
+        if (!active && !disabled) {
           e.currentTarget.style.background = "transparent";
           e.currentTarget.style.color = "rgba(255,255,255,0.65)";
         }
       }}
     >
       <Icon size={16} className="flex-shrink-0" />
-      {label}
+      <span className="flex-1">{label}</span>
+      {badge && (
+        <span
+          className="text-[10px] font-semibold px-1.5 py-0.5 rounded-full leading-none"
+          style={{ background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.5)" }}
+        >
+          {badge}
+        </span>
+      )}
     </Link>
   );
 }

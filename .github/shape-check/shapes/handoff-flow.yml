@@ -1,0 +1,17 @@
+---
+name: handoff-flow
+description: Pass control of a record from one role to another ({name})
+keywords: [handoff, transfer, assign, pass, route]
+required:
+  - id: outbound-handoff
+    description: Action / route that initiates the handoff
+    check: regex
+    pattern: '(handoff|transferTo|assignTo|reassign|nextOwner)'
+  - id: inbound-receiver
+    description: Receiver that picks up the record on the new side
+    check: regex
+    pattern: '(inbox|incoming|assignedTo|ownedBy|pickup)'
+  - id: state-transition
+    description: Status / stage transition recorded
+    check: regex
+    pattern: '(status\s*=|stage\s*=|state\s*=|transitionTo)'

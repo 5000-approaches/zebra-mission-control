@@ -58,11 +58,14 @@ describe("listTools", () => {
 
     const tools = await listTools();
 
-    expect(mockFetch).toHaveBeenCalledWith(MCP_URL, {
+    expect(mockFetch).toHaveBeenCalledWith(
+      MCP_URL,
+      expect.objectContaining({
       method: "POST",
       headers: EXPECTED_HEADERS,
       body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-    });
+      })
+    );
     expect(tools).toHaveLength(1);
     expect(tools[0].name).toBe("getForecast");
   });
@@ -123,7 +126,7 @@ describe("listTools", () => {
         text: async () => "event: message\n\n",
       })
     );
-    await expect(listTools()).rejects.toThrow("MCP SSE response had no data line");
+    await expect(listTools()).rejects.toThrow("MCP SSE response had no parsable data event");
   });
 });
 
@@ -136,7 +139,9 @@ describe("callTool", () => {
 
     const result = await callTool("getForecast", { month: "2026-04" });
 
-    expect(mockFetch).toHaveBeenCalledWith(MCP_URL, {
+    expect(mockFetch).toHaveBeenCalledWith(
+      MCP_URL,
+      expect.objectContaining({
       method: "POST",
       headers: EXPECTED_HEADERS,
       body: JSON.stringify({
@@ -145,7 +150,8 @@ describe("callTool", () => {
         method: "tools/call",
         params: { name: "getForecast", arguments: { month: "2026-04" } },
       }),
-    });
+      })
+    );
     expect(result.content[0].text).toBe("Forecast data");
   });
 

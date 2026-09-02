@@ -10,6 +10,10 @@ permissions:
   contents: read
   pull-requests: write
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint-secrets:
     runs-on: ubuntu-latest
@@ -212,27 +216,73 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Resolve Playwright version
+        id: pw
+        run: echo "version=$(node -p "require('@playwright/test/package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Cache Playwright browsers
+        id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ steps.pw.outputs.version }}
+
       - name: Install Playwright browsers
+        if: steps.pw-cache.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps chromium
 
-      # Auth tests need the real middleware redirect to /auth, so they must run with BYPASS_AUTH OFF
-      # (and require AUTH_SECRET so NextAuth initialises). Authenticated-page tests would be redirected
-      # away if auth weren't bypassed (no session in CI), so they need BYPASS_AUTH=true. Tests are
-      # routed via the [auth-flow] tag in their titles.
-      - name: Run Playwright e2e — auth-flow tests (no bypass)
+      - name: Install Playwright system deps (cache hit)
+        if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: npx playwright install-deps chromium
+
+      - name: Cache .next/cache
+        uses: actions/cache@v4
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-next-${{ hashFiles('package-lock.json') }}-${{ hashFiles('src/**', 'public/**', 'next.config.*', 'tsconfig.json') }}
+          restore-keys: |
+            ${{ runner.os }}-next-${{ hashFiles('package-lock.json') }}-
+
+      - name: Build
+        run: npm run build
+
+      # Run two prebuilt `next start` servers on different ports.
+      # `next start` bakes process env at spawn time (no hot reload like `next dev`),
+      # so flipping BYPASS_AUTH between test phases requires distinct processes.
+      # Port 3000 = real auth middleware (auth-flow tests assert /auth redirect).
+      # Port 3001 = BYPASS_AUTH=true (everything else — no real session available in CI).
+      - name: Start prebuilt servers (3000 real-auth, 3001 bypass-auth)
+        run: |
+          PORT=3000 BYPASS_AUTH="" AUTH_SECRET=ci-only-dummy-secret-for-auth-redirect-tests \
+            npm run start >/tmp/server-3000.log 2>&1 &
+          PORT=3001 BYPASS_AUTH="true" AUTH_SECRET=ci-only-dummy-secret-for-auth-redirect-tests \
+            npm run start >/tmp/server-3001.log 2>&1 &
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3000/auth >/dev/null \
+               && curl -sf http://localhost:3001/ >/dev/null; then
+              echo "Both servers ready in ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::Servers failed to start within 30s"
+          echo "--- server-3000 ---" && cat /tmp/server-3000.log || true
+          echo "--- server-3001 ---" && cat /tmp/server-3001.log || true
+          exit 1
+
+      - name: Run Playwright e2e — auth-flow tests (port 3000)
         env:
-          BYPASS_AUTH: ""
-          AUTH_SECRET: ci-only-dummy-secret-for-auth-redirect-tests
+          PLAYWRIGHT_BASE_URL: http://localhost:3000
         run: npx playwright test --grep '\[auth-flow\]'
 
-      - name: Stop any leftover dev server between phases
-        if: always()
-        run: pkill -f "next dev" || true
-
-      - name: Run Playwright e2e — authenticated-page tests (bypass on)
+      - name: Run Playwright e2e — authenticated-page tests (port 3001)
         env:
-          BYPASS_AUTH: "true"
+          PLAYWRIGHT_BASE_URL: http://localhost:3001
         run: npx playwright test --grep-invert '\[auth-flow\]'
+
+      - name: Stop prebuilt servers
+        if: always()
+        run: pkill -f "next start" || true
 
       - name: Upload Playwright report
         if: always()

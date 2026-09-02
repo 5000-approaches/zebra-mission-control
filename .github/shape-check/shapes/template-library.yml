@@ -1,0 +1,17 @@
+---
+name: template-library
+description: A library of templates named {name} the user can pick from
+keywords: [template, library, presets, snippet, gallery]
+required:
+  - id: templates-dir-or-data
+    description: Templates directory or static data of templates
+    check: regex
+    pattern: '(templates\s*=\s*\[|TEMPLATES\s*=|/templates/)'
+  - id: list-endpoint
+    description: Endpoint / function that lists templates
+    check: regex
+    pattern: '(list[Tt]emplates|templates\.list|GET\s+/templates)'
+  - id: use-action
+    description: Action that applies / copies a template
+    check: regex
+    pattern: '(useTemplate|applyTemplate|copyTemplate|fromTemplate)'

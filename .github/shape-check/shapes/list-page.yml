@@ -1,0 +1,17 @@
+---
+name: list-page
+description: Render a list/index page for a resource
+keywords: [list, index, page, table, rows, all]
+required:
+  - id: page-route
+    description: Page route file for /{name}
+    check: file-exists
+    pattern: '**/{name}/page.*'
+  - id: list-fetch
+    description: A fetch / query / select call that loads the {name} collection
+    check: regex
+    pattern: '(fetch|axios|supabase|prisma|select|query)\b[^\n]*{name}'
+  - id: empty-state
+    description: Empty-state copy or component when the list is empty
+    check: regex
+    pattern: '(empty|no\s+{name}|no\s+items|nothing\s+here)'

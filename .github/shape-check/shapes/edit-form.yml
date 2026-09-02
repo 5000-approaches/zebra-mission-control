@@ -1,0 +1,17 @@
+---
+name: edit-form
+description: Form to edit a single {name} record
+keywords: [edit, form, update, save, submit]
+required:
+  - id: form-component
+    description: Form / useForm / form element for {name}
+    check: regex
+    pattern: '(useForm|<form\b|FormProvider)'
+  - id: submit-handler
+    description: Submit handler that issues a PATCH/PUT/POST
+    check: regex
+    pattern: '(onSubmit|handleSubmit|mutate)[^\n]*'
+  - id: validation
+    description: Validation schema or required-field checks
+    check: regex
+    pattern: '(zod|yup|z\.object|required:\s*true|Validator|schema\s*=)'

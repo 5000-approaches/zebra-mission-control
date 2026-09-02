@@ -1,0 +1,17 @@
+---
+name: dashboard-overview
+description: Overview dashboard with multiple widgets / KPIs named {name}
+keywords: [dashboard, overview, home, kpi, metrics, widgets]
+required:
+  - id: page-route
+    description: Page route for the dashboard
+    check: file-exists
+    pattern: '**/{name}/page.*'
+  - id: widget-data-fetchers
+    description: At least two data fetchers for widgets
+    check: regex
+    pattern: '(useQuery|fetch|getData|loadStats|metrics)'
+  - id: layout
+    description: Grid / flex layout that arranges widgets
+    check: regex
+    pattern: '(grid|flex|Stack|Row|Column|<Grid)'

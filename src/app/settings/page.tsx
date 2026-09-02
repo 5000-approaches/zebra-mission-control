@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
-import IntegrationToolsList from "@/components/IntegrationToolsList";
+import { McpServersPanel } from "@/components/McpServersPanel";
+import { McpServersCard } from "@/components/McpServersCard";
 
 type PoConfig = { url: string; key: string };
 
@@ -44,7 +45,7 @@ function PowerOfficeCard() {
         <div>
           <p className="font-semibold text-base">PowerOffice MCP</p>
           <p className="text-xs mt-0.5" style={{ opacity: 0.55 }}>
-            API connection for the forecast agent
+            Built-in MCP server (URL and key from Vercel env)
           </p>
         </div>
         {open ? <ChevronUp size={18} style={{ opacity: 0.5 }} /> : <ChevronDown size={18} style={{ opacity: 0.5 }} />}
@@ -111,7 +112,7 @@ function PowerOfficeCard() {
             <p className="text-xs mb-2" style={{ color: "var(--page-text)", opacity: 0.65 }}>
               Available tools
             </p>
-            <IntegrationToolsList filterId="poweroffice" variant="embedded" />
+            <McpServersPanel filterId="poweroffice" />
           </div>
         </div>
       )}
@@ -120,6 +121,7 @@ function PowerOfficeCard() {
 }
 
 export default function SettingsPage() {
+  const [toolsRefreshKey, setToolsRefreshKey] = useState(0);
   return (
     <div className="p-8 md:p-12 max-w-2xl">
       <h1 className="text-3xl font-bold mb-2" style={{ color: "var(--page-text)" }}>
@@ -129,7 +131,16 @@ export default function SettingsPage() {
         Integrations and configuration
       </p>
 
-      <PowerOfficeCard />
+      <div className="flex flex-col gap-4">
+        <PowerOfficeCard />
+        <McpServersCard onChanged={() => setToolsRefreshKey((k) => k + 1)} />
+        <div>
+          <p className="text-xs mb-2" style={{ color: "var(--page-text)", opacity: 0.65 }}>
+            Everything the Zebra Agent can use right now
+          </p>
+          <McpServersPanel refreshKey={toolsRefreshKey} />
+        </div>
+      </div>
     </div>
   );
 }

@@ -1,0 +1,17 @@
+---
+name: agent-page
+description: Page that hosts / chats with an agent named {name}
+keywords: [agent, chat, page, conversation, assistant]
+required:
+  - id: page-route
+    description: Page route for the agent
+    check: file-exists
+    pattern: '**/agents/{name}/page.*'
+  - id: agent-definition
+    description: Agent definition / prompt / instructions
+    check: regex
+    pattern: '(system_?prompt|instructions|prompt\s*:|role\s*:\s*[''"]system[''"])'
+  - id: capability-list
+    description: List of capabilities / tools / skills the agent exposes
+    check: regex
+    pattern: '(capabilities|tools|skills)\s*[:=]'

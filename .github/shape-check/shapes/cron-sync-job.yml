@@ -1,0 +1,17 @@
+---
+name: cron-sync-job
+description: Scheduled job that fires on a cron
+keywords: [cron, schedule, job, recurring, vercel-cron]
+required:
+  - id: cron-schedule
+    description: Schedule definition (vercel.json crons / cron expression)
+    check: regex
+    pattern: '(crons?\s*:|schedule\s*:|"\d+\s+\d+\s+[*\d/,-]+\s+[*\d/,-]+\s+[*\d/,-]+")'
+  - id: handler-function
+    description: Handler function the cron invokes
+    check: regex
+    pattern: '(export\s+(async\s+)?function|export\s+const\s+(GET|POST|handler))'
+  - id: error-path
+    description: An error catch / logger / alert in the handler
+    check: regex
+    pattern: '(catch\s*\(|\.catch\s*\(|logError|alert\(|Sentry\.)'

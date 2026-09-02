@@ -1,31 +1,47 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-vi.mock("@/lib/mcp-integrations", () => ({
-  INTEGRATIONS: [
-    {
-      id: "poweroffice",
-      label: "PowerOffice",
-      loadTools: vi.fn(),
-    },
-  ],
-}));
+vi.mock("@/lib/api-auth", () => ({ requireSession: vi.fn() }));
+vi.mock("@/lib/mcp-registry", () => ({ listAllTools: vi.fn() }));
+vi.mock("@/lib/mcp-servers", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/mcp-servers")>("@/lib/mcp-servers");
+  return { ...actual, loadServers: vi.fn() };
+});
+vi.mock("@/lib/tool-catalog", () => ({ getCatalog: vi.fn() }));
 
-import { GET } from "../route";
-import { INTEGRATIONS } from "@/lib/mcp-integrations";
-import type { ToolsApiResponse } from "../route";
+import { requireSession } from "@/lib/api-auth";
+import { listAllTools } from "@/lib/mcp-registry";
+import { loadServers, type McpServerConfig } from "@/lib/mcp-servers";
+import { getCatalog } from "@/lib/tool-catalog";
+import { GET, type ToolsApiResponse } from "../route";
 
-const loadTools = INTEGRATIONS[0].loadTools as ReturnType<typeof vi.fn>;
+const PO: McpServerConfig = { id: "poweroffice", name: "PowerOffice", url: "https://po", headerName: "x", key: "k", builtIn: true };
+const pub = { id: "poweroffice", name: "PowerOffice", url: "https://po", headerName: "x", builtIn: true, keyMasked: "••••" };
 
 beforeEach(() => {
-  loadTools.mockReset();
+  vi.clearAllMocks();
+  vi.mocked(requireSession).mockResolvedValue(null);
+  vi.mocked(loadServers).mockResolvedValue([PO]);
 });
 
 describe("GET /api/integrations/tools", () => {
-  it("returns each integration's tools", async () => {
-    loadTools.mockResolvedValue([
-      { name: "forecast", description: "Build a forecast", inputSchema: {} },
-      { name: "list_invoices", description: "List invoices", inputSchema: {} },
+  it("returns 401 without a session and never touches the servers", async () => {
+    vi.mocked(requireSession).mockResolvedValue(Response.json({ error: "Unauthorized" }, { status: 401 }));
+    const res = await GET();
+    expect(res.status).toBe(401);
+    expect(listAllTools).not.toHaveBeenCalled();
+  });
+
+  it("returns each server's tools with plain-language catalog entries", async () => {
+    vi.mocked(listAllTools).mockResolvedValue([
+      { server: pub, tools: [{ name: "forecast", description: "Build a forecast", inputSchema: { type: "object" } }, { name: "list_invoices", description: "List invoices", inputSchema: {} }] },
     ]);
+    vi.mocked(getCatalog).mockResolvedValue({
+      serverId: "poweroffice",
+      generatedAt: "now",
+      toolNames: ["forecast", "list_invoices"],
+      tools: [{ name: "forecast", friendlyName: "Revenue forecast", purpose: "Shows expected billing." }],
+      howToCombine: "Combine them.",
+    });
 
     const res = await GET();
     expect(res.status).toBe(200);
@@ -35,33 +51,28 @@ describe("GET /api/integrations/tools", () => {
     expect(body.integrations[0]).toMatchObject({
       id: "poweroffice",
       label: "PowerOffice",
+      howToCombine: "Combine them.",
       tools: [
-        { name: "forecast", description: "Build a forecast" },
+        { name: "forecast", description: "Build a forecast", friendlyName: "Revenue forecast", purpose: "Shows expected billing." },
         { name: "list_invoices", description: "List invoices" },
       ],
     });
+    expect((body.integrations[0].tools[0] as Record<string, unknown>).inputSchema).toBeUndefined();
     expect(body.integrations[0].error).toBeUndefined();
   });
 
-  it("returns an error string when an integration's loadTools throws", async () => {
-    loadTools.mockRejectedValue(new Error("connection refused"));
-
-    const res = await GET();
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as ToolsApiResponse;
-
+  it("returns an error string for a failing server and no catalog lookup", async () => {
+    vi.mocked(listAllTools).mockResolvedValue([{ server: pub, tools: [], error: "connection refused" }]);
+    const body = (await (await GET()).json()) as ToolsApiResponse;
     expect(body.integrations[0].tools).toEqual([]);
     expect(body.integrations[0].error).toBe("connection refused");
+    expect(getCatalog).not.toHaveBeenCalled();
   });
 
-  it("strips inputSchema from tool entries (response shape contract)", async () => {
-    loadTools.mockResolvedValue([
-      { name: "forecast", description: "x", inputSchema: { type: "object", properties: { a: {} } } },
-    ]);
-
-    const res = await GET();
-    const body = (await res.json()) as ToolsApiResponse;
-    expect(body.integrations[0].tools[0]).toEqual({ name: "forecast", description: "x" });
-    expect((body.integrations[0].tools[0] as Record<string, unknown>).inputSchema).toBeUndefined();
+  it("still returns tools when the catalog lookup throws", async () => {
+    vi.mocked(listAllTools).mockResolvedValue([{ server: pub, tools: [{ name: "a", description: "A.", inputSchema: {} }] }]);
+    vi.mocked(getCatalog).mockRejectedValue(new Error("boom"));
+    const body = (await (await GET()).json()) as ToolsApiResponse;
+    expect(body.integrations[0].tools).toEqual([{ name: "a", description: "A." }]);
   });
 });

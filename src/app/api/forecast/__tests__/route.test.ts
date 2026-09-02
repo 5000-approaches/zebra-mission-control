@@ -1,11 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { callTool, listTools } from "@/lib/poweroffice-mcp";
 
 vi.mock("@/lib/poweroffice-mcp", () => ({
   listTools: vi.fn(),
   callTool: vi.fn(),
 }));
+vi.mock("@/lib/api-auth", () => ({ requireSessionOrApiSecret: vi.fn() }));
 
+import { requireSessionOrApiSecret } from "@/lib/api-auth";
 import { GET } from "../route";
 
 const REAL_PAYLOAD_APRIL = {
@@ -46,13 +48,22 @@ function makeGet(headers: Record<string, string> = {}, query = "") {
 }
 
 beforeEach(() => {
+  // Pin "today" so month-window assertions (Jan past, Apr current, May/Jun future)
+  // don't break when CI runs near a month boundary.
+  vi.useFakeTimers();
+  vi.setSystemTime(new Date("2026-04-15T12:00:00Z"));
   vi.clearAllMocks();
+  vi.mocked(requireSessionOrApiSecret).mockResolvedValue(null);
   vi.mocked(listTools).mockResolvedValue([
     { name: "forecast", description: "forecast", inputSchema: {} },
   ]);
   vi.stubEnv("POWEROFFICE_MCP_URL", "https://mcp.example.com");
   vi.stubEnv("POWEROFFICE_MCP_KEY", "test-key");
   vi.stubEnv("FORECAST_API_SECRET", "");
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("GET /api/forecast", () => {
@@ -98,13 +109,14 @@ describe("GET /api/forecast", () => {
 
     // Past months: from_date = month-start, to_date = month-end, forecast_until_date = today (Oslo)
     const [, jan] = calls[0];
-    expect(jan).toMatchObject({ from_date: expect.stringMatching(/^\d{4}-01-01$/), to_date: expect.stringMatching(/^\d{4}-01-31$/) });
+    // Dates go out as dd-MM-yyyy — the only format the PowerOffice MCP accepts.
+    expect(jan).toMatchObject({ from_date: expect.stringMatching(/^01-01-\d{4}$/), to_date: expect.stringMatching(/^31-01-\d{4}$/) });
 
     // Current month: from_date = month-start, forecast_until_date = month-end.
     // to_date is yesterday (clamped to from_date on day 1) — never today.
     const [, current] = calls[3];
-    expect(current.from_date).toMatch(/-01$/);
-    expect(current.forecast_until_date).toMatch(/-(28|29|30|31)$/);
+    expect(current.from_date).toMatch(/^01-/);
+    expect(current.forecast_until_date).toMatch(/^(28|29|30|31)-/);
     expect(current.to_date).not.toBe(current.forecast_until_date);
 
     // Future months: from_date = current-month-start (cumulative); to_date = yesterday (matches current)
@@ -136,10 +148,31 @@ describe("GET /api/forecast", () => {
     expect(json.error).toContain("No forecast tool found");
   });
 
-  it("returns 502 when callTool throws", async () => {
-    vi.mocked(callTool).mockRejectedValue(new Error("MCP unreachable"));
+  it("turns a throwing callTool into a per-month error instead of failing the whole response", async () => {
+    vi.mocked(callTool)
+      .mockRejectedValueOnce(new Error("MCP unreachable"))
+      .mockResolvedValue(mockResult(REAL_PAYLOAD_APRIL));
     const res = await GET(makeGet());
-    expect(res.status).toBe(502);
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.months[0].error).toContain("MCP unreachable");
+    expect(json.months[0].projected).toBe(0);
+    expect(json.months[1].observed).toBeCloseTo(843075.44);
+  });
+
+  it("does not log tool output", async () => {
+    const spy = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    vi.mocked(callTool).mockResolvedValue(mockResult(REAL_PAYLOAD_APRIL));
+    await GET(makeGet());
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+
+  it("treats a non-string Notes field as zero adjustments instead of crashing", async () => {
+    vi.mocked(callTool).mockResolvedValue(mockResult({ ...REAL_PAYLOAD_APRIL, Notes: { odd: true } }));
+    const res = await GET(makeGet());
+    expect(res.status).toBe(200);
+    expect((await res.json()).months[3].adjustments).toBe(0);
   });
 
   it("returns 502 when listTools throws", async () => {
@@ -161,6 +194,49 @@ describe("GET /api/forecast", () => {
     const json = await res.json();
     expect(json.months[0].observed).toBe(0);
     expect(json.months[0].projected).toBe(0);
+    expect(typeof json.months[0].error).toBe("string");
+  });
+
+  it("surfaces a { Success: false, Error } envelope as a per-month error instead of silent zeros", async () => {
+    const envelope = {
+      Success: false,
+      Result: null,
+      Error: { Type: "ValidationError", Message: "Invalid date format or parameters", Details: "Invalid from_date format. Use dd-MM-yyyy (e.g., 15-05-2024)." },
+    };
+    vi.mocked(callTool).mockResolvedValue(mockResult(envelope));
+    const res = await GET(makeGet());
+    const json = await res.json();
+    for (const m of json.months) {
+      expect(m.observed).toBe(0);
+      expect(m.projected).toBe(0);
+      expect(m.error).toContain("Invalid date format or parameters");
+      expect(m.error).toContain("Use dd-MM-yyyy");
+    }
+  });
+
+  it("unwraps a { Success: true, Result } envelope", async () => {
+    vi.mocked(callTool).mockResolvedValue(mockResult({ Success: true, Result: REAL_PAYLOAD_APRIL, Error: null }));
+    const res = await GET(makeGet());
+    const json = await res.json();
+    expect(json.months[3].observed).toBeCloseTo(843075.44);
+    expect(json.months[3].projected).toBeCloseTo(883221.89);
+    expect(json.months[3].error).toBeUndefined();
+  });
+
+  it("on day 2 of the month skips current/future calls (from_date must be before to_date) and reports why", async () => {
+    vi.setSystemTime(new Date("2026-09-02T12:00:00Z"));
+    vi.mocked(callTool).mockResolvedValue(mockResult(REAL_PAYLOAD_APRIL));
+    const res = await GET(makeGet());
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    // Only the 3 past months are fetched.
+    expect(vi.mocked(callTool).mock.calls).toHaveLength(3);
+    expect(json.currentMonth).toBe("2026-09");
+    for (const m of json.months.slice(3)) {
+      expect(m.observed).toBe(0);
+      expect(m.projected).toBe(0);
+      expect(m.error).toBe("Not enough booked days yet this month");
+    }
   });
 
   it("includes rawText only when ?debug=1", async () => {
@@ -176,16 +252,18 @@ describe("GET /api/forecast", () => {
     expect(debug.months[0].rawText).toContain("AnalysisPeriodTotal");
   });
 
-  it("returns 401 when auth header is missing and FORECAST_API_SECRET is set", async () => {
-    vi.stubEnv("FORECAST_API_SECRET", "secret123");
+  it("returns the 401 from requireSessionOrApiSecret without calling the MCP", async () => {
+    vi.mocked(requireSessionOrApiSecret).mockResolvedValue(new Response("Unauthorized", { status: 401 }));
     const res = await GET(makeGet());
     expect(res.status).toBe(401);
+    expect(listTools).not.toHaveBeenCalled();
   });
 
-  it("returns 200 when auth header is correct", async () => {
-    vi.stubEnv("FORECAST_API_SECRET", "secret123");
+  it("hands the request to the auth helper so x-api-secret callers are accepted", async () => {
     vi.mocked(callTool).mockResolvedValue(mockResult(REAL_PAYLOAD_APRIL));
-    const res = await GET(makeGet({ "x-api-secret": "secret123" }));
+    const request = makeGet({ "x-api-secret": "secret123" });
+    const res = await GET(request);
     expect(res.status).toBe(200);
+    expect(requireSessionOrApiSecret).toHaveBeenCalledWith(request);
   });
 });
