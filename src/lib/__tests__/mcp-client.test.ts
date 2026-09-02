@@ -8,7 +8,6 @@ const SERVER: McpServerConfig = {
   url: "https://hub.example.com/mcp",
   headerName: "Authorization",
   key: "Bearer abc",
-  builtIn: false,
 };
 
 function jsonResponse(body: unknown) {

@@ -15,7 +15,6 @@ const SERVER: McpServerConfig = {
   url: "https://gurobot.example.com/sse",
   headerName: "x-functions-key",
   key: "",
-  builtIn: false,
 };
 
 function withDeadline<T>(p: Promise<T>, ms: number): Promise<T> {
