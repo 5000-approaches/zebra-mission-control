@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import Markdown from "@/components/Markdown";
 import { AgentHeader } from "@/components/AgentHeader";
 import { McpServersPanel } from "@/components/McpServersPanel";
+import { ThinkingDots } from "@/components/ThinkingDots";
 
 type Attachment = { data: string; mediaType: string; name: string };
 type ToolError = { tool: string; input: unknown; error: string };
@@ -217,21 +218,19 @@ export default function Home() {
                 )
               )}
               {msg.role === "assistant" ? (
-                msg.content ? (
-                  (() => {
-                    const { text, errors } = splitToolErrors(msg.content);
-                    return (
-                      <>
-                        {text && <Markdown>{text}</Markdown>}
-                        {errors.length > 0 && <ToolErrorsBlock errors={errors} />}
-                      </>
-                    );
-                  })()
-                ) : loading && i === messages.length - 1 ? (
-                  "…"
-                ) : (
-                  ""
-                )
+                <>
+                  {msg.content.length > 0 &&
+                    (() => {
+                      const { text, errors } = splitToolErrors(msg.content);
+                      return (
+                        <>
+                          {text && <Markdown>{text}</Markdown>}
+                          {errors.length > 0 && <ToolErrorsBlock errors={errors} />}
+                        </>
+                      );
+                    })()}
+                  {loading && i === messages.length - 1 && <ThinkingDots />}
+                </>
               ) : (
                 msg.content
               )}
